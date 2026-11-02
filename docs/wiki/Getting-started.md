@@ -1,6 +1,6 @@
 # Getting started
 
-[РІвЂ С’ Wiki home](Home)
+[РІвЂ С’ Wiki home](https://github.com/zaera/Pika_note/wiki/Home)
 
 ## A small device. A familiar companion.
 Pika records your thoughts with a physical button. Pika Companion on Android keeps your library, connects to online services and lets you continue Ask without the device.

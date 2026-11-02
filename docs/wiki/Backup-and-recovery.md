@@ -1,6 +1,6 @@
 # Backup, recovery and ownership
 
-[РІвЂ С’ Wiki home](Home)
+[РІвЂ С’ Wiki home](https://github.com/zaera/Pika_note/wiki/Home)
 
 ## Create a complete backup
 In Config в†’ Data & recovery choose the complete backup action. Connect Pika first so device settings and mirrored files are available. Choose a password of at least ten characters and confirm it. Save the .pika-backup file somewhere safe; choose Google Drive in Android's document picker for cloud storage when available.

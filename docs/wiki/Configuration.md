@@ -1,6 +1,6 @@
 # Fine-tune your Pika
 
-[РІвЂ С’ Wiki home](Home)
+[РІвЂ С’ Wiki home](https://github.com/zaera/Pika_note/wiki/Home)
 
 ## AI and voice
 Config в†’ AI & voice changes your OpenAI key and reply voice. Leave a saved-key field empty to retain the key. Cedar is male; Coral is female. Answers follow Russian or English questions. A saved key is not a guarantee that the provider account has usable billing, quota or access.

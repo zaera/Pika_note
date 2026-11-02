@@ -1,6 +1,6 @@
 # Everyday use
 
-[РІвЂ С’ Wiki home](Home)
+[РІвЂ С’ Wiki home](https://github.com/zaera/Pika_note/wiki/Home)
 
 ## Today and navigation
 Today shows active memories, open tasks and events for today / upcoming events. Completed tasks are not counted as open. Mail appears when configured. Tap the counters on the app illustration to open their sections. Battery percentage, voltage and SD free / total space appear in the top status panel.

@@ -1,6 +1,6 @@
 # Ask companion
 
-[РІвЂ С’ Wiki home](Home)
+[РІвЂ С’ Wiki home](https://github.com/zaera/Pika_note/wiki/Home)
 
 ## One conversation, on both sides
 Ask combines general questions, web search, your active records and read-only mail. The phone can send typed or spoken questions without Pika nearby. Long-press a message bubble to copy it. The conversation opens at its latest messages; date dividers help you find older exchanges.
