@@ -1,0 +1,7 @@
+package me.pikanote.companion;
+import android.content.Context;import android.security.keystore.*;import android.util.AtomicFile;import javax.crypto.*;import javax.crypto.spec.GCMParameterSpec;import java.security.KeyStore;import java.io.*;import java.util.Arrays;
+final class Vault{
+ static SecretKey key()throws Exception{KeyStore ks=KeyStore.getInstance("AndroidKeyStore");ks.load(null);if(!ks.containsAlias("pika-v6")){KeyGenerator g=KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES,"AndroidKeyStore");g.init(new KeyGenParameterSpec.Builder("pika-v6",KeyProperties.PURPOSE_ENCRYPT|KeyProperties.PURPOSE_DECRYPT).setBlockModes(KeyProperties.BLOCK_MODE_GCM).setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE).build());g.generateKey();}return (SecretKey)ks.getKey("pika-v6",null);}
+ static byte[] read(File file)throws Exception{AtomicFile f=new AtomicFile(file);byte[] all=f.readFully();if(all.length<29)throw new IOException("Invalid encrypted store");Cipher c=Cipher.getInstance("AES/GCM/NoPadding");c.init(Cipher.DECRYPT_MODE,key(),new GCMParameterSpec(128,Arrays.copyOfRange(all,1,13)));return c.doFinal(all,13,all.length-13);}
+ static void write(File file,byte[] bytes)throws Exception{Cipher c=Cipher.getInstance("AES/GCM/NoPadding");c.init(Cipher.ENCRYPT_MODE,key());byte[] encrypted=c.doFinal(bytes);AtomicFile f=new AtomicFile(file);FileOutputStream out=null;try{out=f.startWrite();out.write(1);out.write(c.getIV());out.write(encrypted);f.finishWrite(out);}catch(Exception e){if(out!=null)f.failWrite(out);throw e;}}
+}

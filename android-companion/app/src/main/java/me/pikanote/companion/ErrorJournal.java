@@ -1,0 +1,7 @@
+package me.pikanote.companion;
+import android.content.Context;import org.json.*;import java.io.*;import java.nio.charset.StandardCharsets;
+final class ErrorJournal {
+ static synchronized void add(Context c,String area,String stage,String reason){try{File f=new File(c.getFilesDir(),"errors.aes");JSONArray a=load(f);String safe=reason==null?"Unspecified failure":reason;for(String secret:new String[]{"sk-","Bearer ","ya29.","1//","private_key","refresh_token","client_secret","password","newPin"})if(safe.contains(secret)){safe="Sensitive details omitted";break;}a.put(new JSONObject().put("utc",System.currentTimeMillis()/1000).put("area",area).put("stage",stage).put("reason",safe.substring(0,Math.min(safe.length(),380))));JSONArray bounded=new JSONArray();for(int i=Math.max(0,a.length()-200);i<a.length();i++)bounded.put(a.get(i));Vault.write(f,bounded.toString().getBytes(StandardCharsets.UTF_8));}catch(Exception e){android.util.Log.w("PikaErrors","Cannot persist diagnostics",e);}}
+ static JSONArray load(File f)throws Exception{return f.exists()?new JSONArray(new String(Vault.read(f),StandardCharsets.UTF_8)):new JSONArray();}
+ static synchronized JSONObject read(Context c)throws Exception{JSONArray a=load(new File(c.getFilesDir(),"errors.aes")),reverse=new JSONArray();for(int i=a.length()-1;i>=0;i--)reverse.put(a.get(i));return new JSONObject().put("capacity",200).put("total",reverse.length()).put("errors",reverse).put("next",-1);}
+}

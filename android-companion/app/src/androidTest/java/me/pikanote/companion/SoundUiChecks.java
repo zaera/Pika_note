@@ -1,0 +1,42 @@
+package me.pikanote.companion;
+import android.app.*;import android.content.*;import android.view.*;import android.view.inputmethod.*;import org.json.*;import java.io.*;
+final class SoundUiChecks {
+ static boolean imeChecked=false;
+ static void yes(boolean v,String message)throws Exception{if(!v)throw new Exception(message);}
+ static void run(Instrumentation i)throws Exception{
+ Context real=i.getTargetContext();File dir=new File(real.getFilesDir(),"sound-ui-check");Context box=new ContextWrapper(real){public File getFilesDir(){dir.mkdirs();return dir;}};Store store=new Store(box);JSONObject snap=store.snapshot();snap.getJSONArray("tasks").put(new JSONObject().put("id","sound-test-task").put("text","Fixture").put("date","").put("priority","normal"));snap.getJSONArray("memories").put(new JSONObject().put("id","m99").put("title","Fixture memory").put("text","Fixture transcript").put("date","2026-10-29T12:00").put("wav",true));Store.applySettings(snap.getJSONObject("settings"),new JSONObject().put("action","sound").put("notify",true).put("notifyMelodies",new JSONArray("[5,6,7,-1,8]")).put("melody",0).put("volume",70));store.state.put("snapshot",snap).put("appLock",false);store.save();
+ LiveActionChecks.run(box);
+ java.lang.reflect.Field singleton=Store.class.getDeclaredField("singleton");singleton.setAccessible(true);singleton.set(null,store);MainActivity.instrumentPreview=true;MainActivity a=null;
+ // Change notifications must never wait on Store while an RPC holds its monitor.
+ PikaService owner=new PikaService();BleTransport transport=new BleTransport(box,owner);owner.ble=transport;transport.online=true;
+ java.util.concurrent.ExecutorService receiver=java.util.concurrent.Executors.newSingleThreadExecutor();
+ try{synchronized(store){java.util.concurrent.Future<?> f=receiver.submit(()->transport.receive(new byte[]{(byte)(30|128),0,0,0,1,0,49}));f.get(1,java.util.concurrent.TimeUnit.SECONDS);transport.online=false;}}finally{receiver.shutdownNow();owner.deviceEvents.shutdownNow();owner.sync.shutdownNow();owner.voice.shutdownNow();transport.writer.shutdownNow();transport.network.shutdownNow();}
+ try{
+ a=(MainActivity)i.startActivitySync(new Intent(real,MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));UiRefreshChecks.await(i,a,"typeof render==='function'&&!!db.libraryVersion");
+ UiRefreshChecks.await(i,a,"document.querySelector('.pika-render img')?.complete&&document.querySelector('.pika-render img').naturalWidth===715");
+ yes("true".equals(UiRefreshChecks.eval(i,a,"(()=>{const img=document.querySelector('.pika-render img'),screen=document.querySelector('.pika-device-screen'),r=img.getBoundingClientRect(),s=screen.getBoundingClientRect();return img.src.endsWith('.svg')&&Math.abs((s.left-r.left)/r.width-152/715)<.01&&Math.abs((s.top-r.top)/r.height-252/937)<.01&&Math.abs(s.width/r.width-420/715)<.01})()")),"SVG display overlay geometry changed");
+ yes("true".equals(UiRefreshChecks.eval(i,a,"(()=>{const dpi=JSON.parse(PikaNative.screenDpi()),height=document.querySelector('.pika-render img').getBoundingClientRect().height;return Math.abs(height*devicePixelRatio/dpi.y*25.4-62.5)<.2})()")),"Pika SVG physical height is not 62.5mm");
+ try(java.io.FileOutputStream image=new java.io.FileOutputStream(new File(real.getExternalCacheDir(),"sound-today-check.png"))){i.getUiAutomation().takeScreenshot().compress(android.graphics.Bitmap.CompressFormat.PNG,100,image);}
+ yes("true".equals(UiRefreshChecks.eval(i,a,"[0,10,11,33,34,66,67,100].every((n,i)=>{const box=document.createElementNS('http://www.w3.org/2000/svg','svg');box.innerHTML=renderPikaBattery({batteryValid:true,batteryPercent:n});return box.querySelectorAll('.battery-segment').length===[0,0,1,1,2,2,3,3][i]})")),"Battery segment thresholds differ from Pika");
+ UiRefreshChecks.eval(i,a,"window.pikaPhoneDeviceChanged({batteryValid:true,batteryPercent:34,batteryMillivolts:3735})");
+ yes("true".equals(UiRefreshChecks.eval(i,a,"document.querySelectorAll('.pika-battery .battery-segment').length===2&&db.device.batteryPercent===34")),"Telemetry did not update Today battery in place");
+ yes("true".equals(UiRefreshChecks.eval(i,a,"(()=>{window.scrollTo(0,0);let calls=0;const saved=window.pikaRequestSync;window.pikaRequestSync=()=>calls++;const fire=(type,y)=>{const e=new Event(type,{bubbles:true,cancelable:true});Object.defineProperty(e,'touches',{value:type==='touchend'?[]:[{clientX:100,clientY:y}]});document.body.dispatchEvent(e)};const main=document.querySelector('main'),hint=document.querySelector('.pull-sync'),before=main.getBoundingClientRect().top;fire('touchstart',100);fire('touchmove',250);hint.getBoundingClientRect();hint.getAnimations().forEach(a=>a.finish());const height=hint.getBoundingClientRect().height,pushed=main.getBoundingClientRect().top-before;const ok=height>0&&Math.abs(pushed-height)<1&&getComputedStyle(hint).position==='relative';fire('touchend',250);const ended=calls===1&&hint.style.height==='0px'&&!hint.classList.contains('dragging');hint.getAnimations().forEach(a=>a.finish());window.pikaRequestSync=saved;return ok&&ended})()")),"Pull sync must expand in document flow, push content and sync once");
+ UiRefreshChecks.eval(i,a,"tab='settings';render()");
+ yes("true".equals(UiRefreshChecks.eval(i,a,"(()=>{const test=document.querySelector('#test-device-sound'),form=document.querySelector('#alert-settings-form');return !!test&&test.closest('section.card')===form.closest('section.card')&&document.querySelector('#alert-melody').options.length===14&&document.querySelector('#preview-melody').options.length===14&&!document.querySelector('#sound-notify')&&Array.from(document.querySelector('#alert-melody').options).some(o=>o.value==='-1'&&o.text==='No sound')&&test.classList.contains('moment')&&test.closest('.sound-preview')!==null&&[0,1,2,3,4,5,6].every(i=>document.querySelector('#notify-melody-'+i).options.length===14)&&document.querySelector('#notify-melody-3').value==='-1'})()")),"Sound group / thirteen test patterns and No sound / notification choices invalid");
+ yes("true".equals(UiRefreshChecks.eval(i,a,"[...document.querySelectorAll('.config-section button,.config-section summary.btn')].every(b=>{const s=getComputedStyle(b);return parseFloat(s.fontSize)>=14&&parseFloat(s.minHeight)>=44})")),"Config still has small legacy button text/touch targets");
+ UiRefreshChecks.eval(i,a,"edit('tasks','sound-test-task')");
+ yes("true".equals(UiRefreshChecks.eval(i,a,"document.querySelector('.editor-primary [data-toggle]')!==null&&document.querySelector('.editor-secondary #delete-record')!==null&&getComputedStyle(document.querySelector('#clear-date')).minHeight==='48px'")),"Task touch actions not grouped");
+ if(!((android.app.KeyguardManager)real.getSystemService(Context.KEYGUARD_SERVICE)).isDeviceLocked()){
+ MainActivity target=a;i.runOnMainSync(()->((InputMethodManager)target.getSystemService(Context.INPUT_METHOD_SERVICE)).hideSoftInputFromWindow(target.web.getWindowToken(),0));Thread.sleep(400);int[] before={0};i.runOnMainSync(()->before[0]=target.web.getHeight());
+ UiRefreshChecks.eval(i,a,"document.querySelector('#record-text').focus()");
+ i.runOnMainSync(()->{target.web.requestFocus();((InputMethodManager)target.getSystemService(Context.INPUT_METHOD_SERVICE)).showSoftInput(target.web,InputMethodManager.SHOW_IMPLICIT);});
+ long until=System.currentTimeMillis()+6000;boolean resized=false;while(System.currentTimeMillis()<until){int[] height={0};i.runOnMainSync(()->height[0]=target.web.getHeight());if(height[0]<before[0]-100){resized=true;break;}Thread.sleep(100);}yes(resized,"Keyboard did not resize WebView");Thread.sleep(500);
+ yes("true".equals(UiRefreshChecks.eval(i,a,"(()=>{const f=document.activeElement,r=f.getBoundingClientRect();return r.top>=0&&r.bottom<=window.innerHeight+2})()")),"Focused field covered by keyboard");
+ i.runOnMainSync(()->((InputMethodManager)target.getSystemService(Context.INPUT_METHOD_SERVICE)).hideSoftInputFromWindow(target.web.getWindowToken(),0));
+ imeChecked=true;
+ }
+ UiRefreshChecks.eval(i,a,"closeEdit();edit('memories','m99')");
+ yes("true".equals(UiRefreshChecks.eval(i,a,"document.querySelector('#editor [data-txt] svg')!==null&&document.querySelector('#editor [data-wav] svg')!==null&&document.querySelector('#delete-record').textContent==='Forget'")),"Memory downloads / Forget invalid");
+ }finally{if(a!=null){MainActivity close=a;i.runOnMainSync(close::finish);}singleton.set(null,null);MainActivity.instrumentPreview=false;PhoneBackup.remove(dir);}
+ }
+}

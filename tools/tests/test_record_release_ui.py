@@ -1,0 +1,29 @@
+from pathlib import Path
+import subprocess,sys,tempfile
+root=Path(__file__).resolve().parents[2]
+s=(root/'pika_note/src/app/record.cpp').read_text()
+code=s[s.index('namespace {'):s.index('static bool writeWavHeader')]
+stub=r'''#include <atomic>
+#include <cstdint>
+#include <cassert>
+#include <cstdio>
+using Fn=void(*)(void*);Fn pending=nullptr;bool fail=false,releaseDuringPaint=false;int listening=0,stopped=0;bool stoppedQuestion=false;
+constexpr int pdPASS=1;using BaseType_t=int;
+struct Log{void println(const char*){}}Serial;
+void showRecordingProgress(uint32_t,int){} void showRecording();void showAskListening();
+void showRecordingStopped(bool q){++stopped;stoppedQuestion=q;}
+void vTaskDelete(void*){}int xTaskCreatePinnedToCore(Fn fn,const char*,int,void*,int,void*,int){if(fail)return 0;pending=fn;return pdPASS;}
+void delay(int){assert(pending);Fn f=pending;pending=nullptr;f(nullptr);}
+'''
+main=r'''void showRecording(){++listening;if(releaseDuringPaint)recordingEnded=true;}
+void showAskListening(){showRecording();}
+int main(){
+ startRecordingUi();assert(recordingUiBusy&&listening==0);releaseDuringPaint=true;waitForRecordingUi();assert(listening==1&&stopped==1&&recordingEndedDrawn&&!stoppedQuestion);
+ recordingEnded=false;recordingEndedDrawn=false;releaseDuringPaint=false;startRecordingUi(false,0,0,true);waitForRecordingUi();assert(listening==2&&stopped==1);
+ recordingEnded=true;startRecordingUi(false,0,0,true);waitForRecordingUi();assert(listening==2&&stopped==2&&stoppedQuestion);
+ fail=true;assert(!startRecordingUi());assert(!recordingUiBusy);
+ puts("Release during panel update and after panel update: PASS");}
+'''
+with tempfile.TemporaryDirectory() as folder:
+ p=Path(folder);(p/'test.cpp').write_text(stub+code+main);exe=p/'record.exe'
+ subprocess.run((sys.argv[1:] or ['c++'])+[str(p/'test.cpp'),'-std=c++17','-o',str(exe)],check=True);subprocess.run([str(exe)],check=True)

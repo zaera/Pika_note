@@ -1,0 +1,1 @@
+<resources><style name="PikaBase" parent="android:style/Theme.Material.NoActionBar"><item name="android:windowBackground">@color/pika_launch_background</item><item name="android:colorAccent">#fa5438</item></style></resources>

@@ -1,0 +1,14 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert'),crypto=require('crypto');
+const html=fs.readFileSync('tools/manager.html','utf8'),script=html.match(/<script>([\s\S]*)<\/script>/)[1];new vm.Script(script);
+const start=script.indexOf('function validBackupPath('),end=script.indexOf('function confirmBackupRestore(',start);assert(start>=0&&end>start);
+const ctx=vm.createContext({TextDecoder,Uint8Array,Map,Set,Error,Number,JSON});vm.runInContext(script.slice(start,end),ctx);
+function tarEntry(name,data){const h=Buffer.alloc(512);h.write(name,0,100);h.write('0000600',100);h.write('0000000',108);h.write('0000000',116);h.write(data.length.toString(8).padStart(11,'0'),124);h.write('00000000000',136);h.fill(32,148,156);h[156]=48;h.write('ustar',257);h.write('00',263);let sum=0;for(const b of h)sum+=b;h.write(sum.toString(8).padStart(6,'0')+'\0 ',148);return Buffer.concat([h,data,Buffer.alloc((512-data.length%512)%512)])}
+function archive(items,changeManifest=x=>x){const manifest={format:'pika-backup',version:1,files:items.map(([name,data])=>({name,size:data.length,sha256:crypto.createHash('sha256').update(data).digest('hex')}))};changeManifest(manifest);return Buffer.concat([tarEntry('pika-backup.json',Buffer.from(JSON.stringify(manifest))),...items.map(([name,data])=>tarEntry('notes/'+name,data)),Buffer.alloc(1024)])}
+(async()=>{
+ const items=[['index.csv',Buffer.from('1|date|1\n')],['note_001.txt',Buffer.from('Привет. Original English.')],['note_001.wav',Buffer.from([0,1,255,0])],['empty.file',Buffer.alloc(0)],['.hidden',Buffer.from('hidden')]];
+ const valid=archive(items),parsed=await ctx.parsePikaArchive(new Blob([valid]));assert.equal(parsed.manifest.files.length,5);assert.equal(await new Blob([valid]).slice(parsed.entries.get('note_001.txt').start,parsed.entries.get('note_001.txt').start+items[1][1].length).text(),'Привет. Original English.');
+ for(const bad of [archive([['../escape',Buffer.from('x')]]),archive([['.undo-live/manifest.json',Buffer.from('x')]]),archive(items,m=>m.files[0].size++),archive(items,m=>m.files.push(m.files[0])),valid.subarray(0,valid.length-512),(()=>{const b=Buffer.from(valid);b[0]^=1;return b})()])await assert.rejects(()=>ctx.parsePikaArchive(new Blob([bad])));
+ for(const name of ['../x','/notes/x','x/../../y','a\\b','.undo-stage/x','a/.undo-live/x','x//y'])assert(!ctx.validBackupPath(name));
+ assert(script.includes("location.href='/api/backup'"));assert(script.includes('signal:restoreAbort.signal'));assert(script.includes('if(session&&!committing)'));assert(script.includes('JSON.stringify({session,confirmed:true})'));assert(html.includes('Undo last change'));
+ console.log('Backup UI: real TAR parsing, UTF-8/binary/hidden/empty files, path traversal, checksum, truncation, duplicate manifest and staged restore guards: PASS');
+})().catch(e=>{console.error(e);process.exitCode=1});
