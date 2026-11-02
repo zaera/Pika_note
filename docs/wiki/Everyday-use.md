@@ -1,6 +1,6 @@
 # Everyday use
 
-[РІвЂ С’ Wiki home](https://github.com/zaera/Pika_note/wiki/Home)
+[← Wiki home](https://github.com/zaera/Pika_note/wiki/Home)
 
 ## Today and navigation
 Today shows active memories, open tasks and events for today / upcoming events. Completed tasks are not counted as open. Mail appears when configured. Tap the counters on the app illustration to open their sections. Battery percentage, voltage and SD free / total space appear in the top status panel.
@@ -13,7 +13,7 @@ Default actions on Today:
 - Lower single: events. Lower double: weekly briefing. Lower hold: Ask. Lower triple: clock.
 - Hold both buttons to request a companion reconnection. This is not a local Wi-Fi web-server command in V8.
 
-Change single, double, triple and hold assignments in Config в†’ Home button actions. Record and Ask are offered on hold slots. Inside an active screen, that screen's controls take over; Today combinations resume after returning home. The month calendar and weather close with either button. Lower / Back stops Mail narration and leaves Mail. Clock stays awake until exited; the other extra screens return to Today before timed sleep.
+Change single, double, triple and hold assignments in Config → Home button actions. Record and Ask are offered on hold slots. Inside an active screen, that screen's controls take over; Today combinations resume after returning home. The month calendar and weather close with either button. Lower / Back stops Mail narration and leaves Mail. Clock stays awake until exited; the other extra screens return to Today before timed sleep.
 
 ## Memories
 Memories contain your original recording and transcript. Edit the transcript to correct recognition; it stays a memory. In the app, Add memory offers a pencil for text or a microphone for hold-to-record. Voice notes are kept for later processing if internet is unavailable. Manually editing an untranscribed note prevents automatic recognition from overwriting your text.

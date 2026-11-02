@@ -12,4 +12,4 @@ A small device. A complete companion.
 - [Hardware](https://github.com/zaera/Pika_note/wiki/Hardware)
 - [Architecture](https://github.com/zaera/Pika_note/wiki/Architecture)
 
-[Downloads](https://github.com/zaera/Pika_note/releases) В· [Source](https://github.com/zaera/Pika_note)
+[Downloads](https://github.com/zaera/Pika_note/releases) · [Source](https://github.com/zaera/Pika_note)

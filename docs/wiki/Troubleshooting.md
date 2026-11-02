@@ -1,6 +1,6 @@
 # Troubleshooting
 
-[РІвЂ С’ Wiki home](https://github.com/zaera/Pika_note/wiki/Home)
+[← Wiki home](https://github.com/zaera/Pika_note/wiki/Home)
 
 ## Connected, but changes are still queued
 Keep Pika awake and the app available. Check the top status and orange progress line. A connection is not the same as a completed sync. Pull down once to request another attempt. Large WAVs or a full restore take longer; ordinary edits should use incremental exchange. Use Force full sync only when you need a complete verification.

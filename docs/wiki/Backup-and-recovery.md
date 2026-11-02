@@ -1,9 +1,9 @@
 # Backup, recovery and ownership
 
-[РІвЂ С’ Wiki home](https://github.com/zaera/Pika_note/wiki/Home)
+[← Wiki home](https://github.com/zaera/Pika_note/wiki/Home)
 
 ## Create a complete backup
-In Config в†’ Data & recovery choose the complete backup action. Connect Pika first so device settings and mirrored files are available. Choose a password of at least ten characters and confirm it. Save the .pika-backup file somewhere safe; choose Google Drive in Android's document picker for cloud storage when available.
+In Config → Data & recovery choose the complete backup action. Connect Pika first so device settings and mirrored files are available. Choose a password of at least ten characters and confirm it. Save the .pika-backup file somewhere safe; choose Google Drive in Android's document picker for cloud storage when available.
 
 The portable encrypted backup includes records, available WAVs, transcripts, Ask history, phone state and captured device/AI/Google settings. It is independent of the original phone's Android Keystore. The password is required on another phone. Keep both file and password: losing the password makes recovery impossible. Credentials are sensitive even inside an encrypted backup.
 
