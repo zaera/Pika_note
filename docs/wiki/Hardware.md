@@ -1,5 +1,9 @@
 # Hardware & printable case
 
+[Official Waveshare ESP32-S3-ePaper-1.54 documentation](https://docs.waveshare.com/ESP32-S3-ePaper-1.54)
+
+![Waveshare board](https://raw.githubusercontent.com/zaera/Pika_note/main/docs/assets/waveshare-esp32-s3-epaper-1-54.png)
+
 The target is the Waveshare ESP32-S3-ePaper-1.54 family with the monochrome panel driver used in this firmware, 8 MB flash/PSRAM, microSD, microphone, speaker, two buttons and battery. This is not a universal image for all Waveshare panels.
 
 ## Case files

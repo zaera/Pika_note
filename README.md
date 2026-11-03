@@ -1,5 +1,7 @@
 <p align="center"><img src="docs/assets/pika-hero.svg" alt="Pika Note — Your thoughts, close at hand" width="100%"></p>
 
+<p align="center"><img src="docs/assets/pika-companion-hero.png" alt="Pika Companion: Today, tasks and calendar on Android, in light and dark themes" width="100%"></p>
+
 <p align="center"><strong>A little e-paper notebook. A full companion.</strong><br>Speak a thought, make a plan, continue the conversation.</p>
 <p align="center"><a href="https://github.com/zaera/Pika_note/releases">Download</a> · <a href="https://github.com/zaera/Pika_note/wiki">Wiki</a> · <a href="docs/wiki/Getting-started.md">Get started</a> · <a href="case">Print the case</a></p>
 
@@ -32,6 +34,14 @@ This compares the starting workflow used for this project with this Pika build; 
 | Ask conversation | Questions about stored records | Unified conversation about records, general knowledge and supported web queries |
 | Notifications | Limited notification behavior | Configurable scenario sounds, event reminders and optional vibration patterns |
 | Companion | No equivalent full Android companion in the baseline | Full Android library, Ask, configuration, backup and sync app |
+
+## The little board behind Pika
+
+Built around the **Waveshare ESP32-S3-ePaper-1.54 V2**. Start with the [official Waveshare documentation](https://docs.waveshare.com/ESP32-S3-ePaper-1.54) for board resources, schematics and setup.
+
+<p align="center"><a href="https://docs.waveshare.com/ESP32-S3-ePaper-1.54"><img src="docs/assets/waveshare-esp32-s3-epaper-1-54.png" alt="Waveshare ESP32-S3-ePaper-1.54 board, rear view" width="560"></a></p>
+
+The current build targets **8 MB flash / 8 MB PSRAM** and the matching monochrome display. V1 and other display variants need matching firmware; check the board revision before flashing.
 
 ## Start here
 
