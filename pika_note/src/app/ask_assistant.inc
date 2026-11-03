@@ -9,6 +9,12 @@ namespace {bool askReadSession(JsonDocument&);bool askSaveSession(JsonDocument&)
 namespace {
 bool askDryRun=false,askExecutionSaved=false;
 struct AskRecord {String id,kind,text,title,date,end,priority;int note=-1;bool archived=false,allDay=false;};
+bool askCurrentMonth(const String& question){const String folded(voiceCommandFold(question.c_str()).c_str());return folded.indexOf("этого месяца")>=0||folded.indexOf("текущего месяца")>=0||folded.indexOf("this month")>=0||folded.indexOf("current month")>=0;}
+String askCurrentMonthDate(const String& question,const String& nowLocal){
+ if(!askCurrentMonth(question)||nowLocal.length()<10)return "";
+ unsigned day=0,matches=0;for(unsigned at=0;at<question.length();){if(question[at]<'0'||question[at]>'9'){++at;continue;}unsigned value=0;while(at<question.length()&&question[at]>='0'&&question[at]<='9'){value=std::min(1000u,value*10+unsigned(question[at++]-'0'));}if(value>=1&&value<=31){day=value;++matches;}}
+ if(matches!=1)return "";return nowLocal.substring(0,7)+"-"+(day<10?"0":"")+String(int(day));
+}
 String askHistory(){const String path=pikaAskContextPath();recoverStoredFile(SD_MMC,path);return readSmallFile(path.c_str(),26000);}
 String askResolutionHint,askSelectedSource,askSelectedTarget,askResolvedRoute;
 String lastAskFailure;
@@ -143,6 +149,7 @@ static bool prepareAskActions(const String& question,String& answer,std::vector<
   "Creation uses original source/request language, priority low/normal/high/urgent (normal default). Understand RU/EN priority and deadline variants. Tasks without requested/inferred explicit deadline have empty date/end; a day deadline uses 23:59. 'до/к/by/before' a time is a deadline, not event. "
   "For planning, relative dates inside a source note refer to that note capture date, not the current day, unless CURRENT REQUEST explicitly shifts the plan. If this yields past event dates and the user wants a new actionable plan, ask how to reschedule rather than inventing dates. "
   "All dates are Europe/Kyiv LOCAL YYYY-MM-DDTHH:mm (tasks and timed events), or YYYY-MM-DD for all-day events. Resolve natural language dates yourself using nowLocal and the explicit tomorrow/dayAfterTomorrow anchors. Tomorrow/завтра means +1 calendar day; day after tomorrow/послезавтра +2; in N days/через N дней +N. Next weekdays and relative dates are sufficient: NEVER demand YYYY-MM-DD from the user. That format is INTERNAL only. Deadline end of week = Sunday 23:59. "
+  "For this month/current month/этого месяца/текущего месяца use the year-month of nowLocal, never dates in dialogue or records. Explicit current anchors override old conversation dates. All-day date AND end must be YYYY-MM-DD, never 23:59 timestamps. "
   "New events without any requested date default to tomorrow, allDay=true; ambiguous stated dates require clarification. Timed event default duration one hour; all-day end is LAST INCLUDED day. N all-day days ends start+N-1; timed N days ends same time N days later. All-day single day end=date. Event ranges preserve both endpoints. "
   "For unused fields use empty strings, false, normal and fields=[] as appropriate. Every operation must be supported, otherwise no operations. Answer/clarifying question Russian for Russian CURRENT REQUEST, English otherwise.";
  // Route authorization already checked the original utterance. Once a whole
@@ -156,6 +163,7 @@ static bool prepareAskActions(const String& question,String& answer,std::vector<
    context["currentRequest"]="Create a complete set of ALL "+String(kind=="tasks"?"tasks":kind=="events"?"events":"tasks and events")+" from the FULL transcript of source "+askSelectedSource+", including unscheduled chores. The original request identifies the source by distinguishing details, not a partial action list. Honor any explicit ONLY/count/type restrictions in originalRequest; never invent actions.";
   }
  }
+ Serial.printf("[AskClock] nowLocal=%s tomorrow=%s\n",String(context["nowLocal"]|"").c_str(),String(context["tomorrow"]|"").c_str());
  String input;serializeJson(context,input);
  // Exact numeric status commands need no second model interpretation.
  // The current-turn route and permission gates have already passed; only
@@ -222,16 +230,28 @@ static bool prepareAskActions(const String& question,String& answer,std::vector<
   // Canonicalize that equivalent representation; never discard a real time.
   if(opKind=="events"&&(mutation["record"]["allDay"]|false))for(const char* key:{"date","end"}){
    const String value=mutation["record"][key]|"";
-   if(value.length()==16&&value.substring(10)=="T00:00")mutation["record"][key]=value.substring(0,10);
+   // Models express inclusive all-day end as 23:59 (sometimes :59 seconds).
+   // Accept only day boundaries; do not erase an actual appointment time.
+   const String clock=value.substring(10);
+   const bool startOfDay=clock=="T00:00"||clock=="T00:00:00";
+   const bool endOfDay=String(key)=="end"&&(clock=="T23:59"||clock=="T23:59:00"||clock=="T23:59:59");
+   if(value.length()>=16&&(startOfDay||endOfDay))mutation["record"][key]=value.substring(0,10);
   }
   if(creating&&opKind=="events"&&(mutation["record"]["allDay"]|false)&&String(mutation["record"]["end"]|"").length()==0)mutation["record"]["end"]=mutation["record"]["date"];
+  // A direct, single-date request has an authoritative calendar anchor.
+  // Old dialogue must never silently turn "this month" into another month.
+  if(creating&&source.length()==0&&operations.size()==1&&askCurrentMonth(question)){
+   const String anchored=askCurrentMonthDate(question,String(context["nowLocal"]|""));
+   const String before=mutation["record"]["date"]|"",last=mutation["record"]["end"]|"";
+   if(anchored.length()&&before.length()>=10&&(last.length()==0||last.substring(0,10)==before.substring(0,10))){mutation["record"]["date"]=anchored+before.substring(10);if(last.length())mutation["record"]["end"]=anchored+last.substring(10);}
+  }
   // Validate every resulting date/title before committing any part of a plan.
   if(String(mutation["action"]|"")=="save"){
    const String text=mutation["record"]["text"]|"",date=mutation["record"]["date"]|"",end=mutation["record"]["end"]|"",priority=mutation["record"]["priority"]|"normal";const bool allDay=mutation["record"]["allDay"]|false;bool dateValid=false;
    String trimmed=text;trimmed.trim();
    const String dueUtc=managerLocalToUtc(date,allDay,&dateValid);valid&=dateValid&&trimmed.length()>0&&text.length()<=(opKind=="memories"?32000:1500)&&(priority=="low"||priority=="normal"||priority=="high"||priority=="urgent");
    if(opKind=="events"){bool endValid=false;const String endUtc=managerLocalToUtc(end,allDay,&endValid);valid&=endValid&&dueUtc.length()>0&&endUtc.length()>0&&(allDay?endUtc>=dueUtc:endUtc>dueUtc);}
-   if(!valid){answer=askMessage(ru,"В плане некорректная дата или текст. Ничего не изменено.","The plan has an invalid date or text. Nothing was changed.");return true;}
+   if(!valid){pikaError("Ask","plan-date",String("kind=")+opKind+" allDay="+String(int(allDay))+" date="+date+" end="+end+" titleBytes="+String(int(text.length())));Serial.printf("[AskValidateDate] kind=%s allDay=%d date=%s end=%s dateValid=%d textBytes=%u\n",opKind.c_str(),allDay,date.c_str(),end.c_str(),dateValid,unsigned(text.length()));answer=askMessage(ru,"В плане некорректная дата или текст. Ничего не изменено.","The plan has an invalid date or text. Nothing was changed.");return true;}
   }
   titles.push_back(creating?String(op["text"]|""):target->title);mutations.push_back(std::move(mutation));
   if(target!=records.end()&&target->note>0&&std::find(sources.begin(),sources.end(),target->note)==sources.end())sources.push_back(target->note);

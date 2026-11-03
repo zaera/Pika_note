@@ -9,6 +9,7 @@ stubs=r'''
 #include <cmath>
 #include <deque>
 struct {template<class... Args>void printf(const char*,Args...) {} template<class T>void print(const T&){} template<class T>void println(const T&){} } Serial;
+void pikaError(const char*,const char*,const String&,int=0,uint32_t=0){}
 int stageDepth=0,stageCalls=0;std::vector<std::string> progress;
 bool pikaRunAskStage(void (*callback)(void*),void* context){assert(stageDepth==0);++stageDepth;++stageCalls;callback(context);--stageDepth;return true;}
 void showAskActionProgress(const char* phase,const char* kind,int done,int total){assert(stageDepth==1);assert(done>=0&&done<=total);progress.push_back(std::string(phase)+" "+kind+" "+std::to_string(done)+"/"+std::to_string(total));}
@@ -59,6 +60,18 @@ int main(){
  JsonDocument event;event["kind"]="events";event["record"]["text"]="Old meeting";event["record"]["date"]="2026-10-18T12:00";event["record"]["end"]="2026-10-18T13:00";assert(managerMutation(event.as<JsonVariantConst>(),id,error));const String eventId=id;const auto beforeRestore=managerRevision();route("change","restore","events","Restore the meeting");p=plan();op=operation(p,"events","restore",eventId,"Old meeting","2026-10-18T12:00","2026-10-18T13:00");op["evidence"]="Old meeting";respond(p);assert(applyAskAssistant("Restore the meeting",answer,sources));assert(managerRevision()==beforeRestore);
  // With an explicit new date it returns to active without changing its ID.
  route("change","restore","events","Restore the meeting tomorrow");p=plan();op=operation(p,"events","restore",eventId,"Old meeting","2026-10-21T12:00","2026-10-21T13:00");op["evidence"]="Old meeting";op["fields"].add("date");op["fields"].add("end");respond(p);assert(applyAskAssistant("Restore the meeting tomorrow",answer,sources));tasks=loadBrainTasks();auto restored=std::find_if(tasks.begin(),tasks.end(),[&](const BrainTaskRecord& t){return t.id==eventId;});assert(restored!=tasks.end()&&!restored->archived&&restored->dueUtc=="2026-10-21T12:00:00Z");
+ // All-day planner boundary formats from the reported November 28 request.
+ for(const char* last:{"2026-11-28T23:59","2026-11-28T23:59:59","2026-11-28T00:00:00","2026-11-28"}){
+  route("create","create","events","Create November event");auto dayPlan=plan();auto item=operation(dayPlan,"events","create","","Village internet","2026-11-28T00:00:00",last);item["allDay"]=true;respond(dayPlan);
+  const auto rev=managerRevision();assert(applyAskAssistant("Create November event",answer,sources));assert(managerRevision()>rev);
+  auto saved=loadBrainTasks().back();assert(saved.datePrecision=="day"&&saved.dueUtc==saved.endUtc);
+ }
+ assert(askCurrentMonthDate("Create on 28 this month","2026-11-03 13:09")=="2026-11-28");
+ assert(askCurrentMonthDate("Создай на 28 число этого месяца","2026-11-03 13:09")=="2026-11-28");
+ // Old dialogue/model month cannot override an explicit current-month date.
+ route("create","create","events","Create event on 28 this month");auto monthPlan=plan();auto monthItem=operation(monthPlan,"events","create","","Internet","2026-09-28","2026-09-28");monthItem["allDay"]=true;respond(monthPlan);assert(applyAskAssistant("Create event on 28 this month",answer,sources));assert(loadBrainTasks().back().dueUtc.substring(0,10)=="2026-10-28");
+ // A true non-boundary time must not be silently converted to an all-day date.
+ route("create","create","events","Invalid all-day time");auto invalidDay=plan();auto invalidItem=operation(invalidDay,"events","create","","Invalid","2026-11-28T12:30","2026-11-28T23:59");invalidItem["allDay"]=true;respond(invalidDay);const auto invalidRev=managerRevision();assert(applyAskAssistant("Invalid all-day time",answer,sources));assert(managerRevision()==invalidRev);
  // Source notes must also be supplied when the router labels a source-based request create.
  hide["action"]="remember";assert(managerMutation(hide.as<JsonVariantConst>(),id,error));
  route("create","create","tasks","Create tasks from my note");p=plan();op=operation(p,"tasks","create","","Buy paint");op["sourceId"]="m1";op["evidence"]="Buy paint";respond(p);const auto beforeSource=loadBrainTasks().size();assert(applyAskAssistant("Create tasks from my note",answer,sources));assert(loadBrainTasks().size()==beforeSource+1&&loadBrainTasks().back().noteNum==1);
