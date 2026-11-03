@@ -1,5 +1,21 @@
 # Build Pika Note
 
+## One-click Windows updater
+
+Install Python 3.10+ with the Python launcher, connect Pika with a USB data cable, wake it and double-click `tools/flash_pika.bat`. Enter the listed COM port (or its list number). Close Cura and serial monitors before starting.
+
+The Python script installs esptool 5 and pyserial into a private per-user cache if required. It downloads the newest compatible published GitHub release, **including previews**, checks SHA-256, requests the USB 1200-baud bootloader transition, follows the same USB identity to its new port and verifies the device's 8 MB flash and partition layout before updating.
+
+The application is written at 0x10000 and verified by esptool. Only then is the OTA boot-selection area reset to select the updated app0; there is no full-chip erase. NVS settings, device ownership and microSD files are kept. Back up before updating and safely eject USB SD Backup first. If power or USB is interrupted during writing, reconnect and rerun the updater; do not erase the whole chip.
+
+```sh
+python tools/flash_pika.py
+python tools/flash_pika.py --port COM20
+python tools/flash_pika.py --download-only ./firmware-download
+```
+
+For a **new/erased supported board only**, use `python tools/flash_pika.py --install`; this additionally writes the bootloader and partition table. An existing unknown partition layout is intentionally rejected in ordinary update mode. `--stable` excludes previews, and fails if no compatible stable release exists. Download errors/checksum failures occur before any USB access.
+
 ## Firmware
 Install Python and PlatformIO Core. From this checkout run:
 

@@ -5,6 +5,8 @@
 <p align="center"><strong>A little e-paper notebook. A full companion.</strong><br>Speak a thought, make a plan, continue the conversation.</p>
 <p align="center"><a href="https://github.com/zaera/Pika_note/releases">Download</a> · <a href="https://github.com/zaera/Pika_note/wiki">Wiki</a> · <a href="docs/wiki/Getting-started.md">Get started</a> · <a href="case">Print the case</a></p>
 
+<p align="center"><strong>☕ Enjoying Pika Note? <a href="https://ko-fi.com/punishman">Buy me a coffee</a> 🧡<br>Your support helps keep this little project growing. ✨</strong></p>
+
 ## Your words. Your plans. One conversation.
 
 Pika Note combines a physical voice recorder with an Android companion. The phone stores your library and handles recognition, AI, speech, mail, calendar and weather. Pika stays small: record, ask, glance, move on.
@@ -52,6 +54,12 @@ The current build targets **8 MB flash / 8 MB PSRAM** and the matching monochrom
 5. Add your own OpenAI API key in the required setup step. Google services, theme and app PIN are optional.
 
 Default Today holds: **upper = Memory**, **lower = Ask**. Offline memories are retained. Ask mutations are explicit; archived records are consulted when you ask about the archive.
+
+### Update over USB
+
+On Windows, install **Python 3.10+**, connect and wake Pika, then double-click [`tools/flash_pika.bat`](tools/flash_pika.bat). Enter its COM port when asked. The updater downloads the latest published firmware (including previews), verifies SHA-256, follows Pika into its bootloader even if the port changes, flashes and restarts it. Required Python packages are installed in a private cache on first use.
+
+Back up first and safely eject USB SD Backup mode. Ordinary updates keep settings and SD files; the firmware boot selector is reset so the new application starts. First installation on a **new/erased supported board** uses `python tools/flash_pika.py --install`. See [build/update instructions](docs/wiki/Building.md).
 
 ## Build & explore
 
