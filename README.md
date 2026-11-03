@@ -48,7 +48,7 @@ The current build targets **8 MB flash / 8 MB PSRAM** and the matching monochrom
 ## Start here
 
 1. Use a compatible Waveshare ESP32-S3-ePaper-1.54 board, matching monochrome display, microphone/speaker and microSD. Display variants need their own driver.
-2. Download matching firmware **8.0.4** and Companion **8.0.6-preview** from [Releases](https://github.com/zaera/Pika_note/releases).
+2. Download matching firmware **8.0.5** and Companion **8.0.7-preview** from [Releases](https://github.com/zaera/Pika_note/releases).
 3. Install the APK on Android **8+**, enable Bluetooth and grant the requested permissions.
 4. Wake Pika. In Companion choose **Get started → Find Pika**, then confirm the displayed code.
 5. Add your own OpenAI API key in the required setup step. Google services, theme and app PIN are optional.
