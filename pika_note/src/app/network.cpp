@@ -1235,7 +1235,36 @@ bool playBrainSpeech(const String& text, const char* fallbackPath, int sourceCou
   PikaBusyLight busyLight;
   if(cancelled)*cancelled=false;
   const uint32_t startedAt = millis();
-  {PikaSpeechStream stream;if(!stream.begin(cancelOnLower))return false;pikaSoundSetEnabled(false);JsonDocument doc;doc["key"]=pikaOpenAiKey();auto request=doc["request"].to<JsonObject>();request["model"]="gpt-4o-mini-tts";request["voice"]=pikaSpeechVoice();request["input"]=speechFriendlyTimes(text);request["speed"]=1.08;request["response_format"]="pcm";request["instructions"]=russianOnly?"Speak Russian naturally. Read all supplied text.":"Speak only Russian or English following the supplied text.";String payload;serializeJson(doc,payload);PhoneSecureClient audio;bool complete=false,shown=false;size_t bytes=0;if(audio.connectSpeech(payload)){uint32_t last=millis();while(stream.poll()&&millis()-last<30000&&millis()-startedAt<180000){int budget=4096;while(budget--&&audio.available()){int b=audio.read();if(b<0)break;if(!stream.put((char)b))break;++bytes;last=millis();}if(!shown&&stream.ready()){if(speechScreen)speechScreen();else showAskSpeaking(text,sourceCount);shown=true;audioPlaying=true;stream.start();}if(!audio.available()&&!audio.connected()){complete=pcmStreamValid(bytes)&&!audio.failed();break;}delay(1);}}audio.stop();if(complete&&!shown){if(speechScreen)speechScreen();else showAskSpeaking(text,sourceCount);audioPlaying=true;}bool ok=stream.finish(complete);if(cancelled)*cancelled=stream.wasCancelled();audioPlaying=false;pikaSoundSetEnabled(true);performanceStats.speechMs=millis()-startedAt;return ok;}
+  {
+    PikaSpeechStream stream;
+    if(!stream.begin(cancelOnLower)){pikaError("audio","speech-start","Could not allocate/start PCM playback");return false;}
+    pikaSoundSetEnabled(false);
+    JsonDocument doc;doc["key"]=pikaOpenAiKey();auto request=doc["request"].to<JsonObject>();
+    request["model"]="gpt-4o-mini-tts";request["voice"]=pikaSpeechVoice();request["input"]=speechFriendlyTimes(text);
+    request["speed"]=1.08;request["response_format"]="pcm";
+    request["instructions"]=russianOnly?"Speak Russian naturally. Read all supplied text.":"Speak only Russian or English following the supplied text.";
+    String payload;serializeJson(doc,payload);
+    PhoneSecureClient audio;bool complete=false,shown=false;size_t bytes=0;
+    const bool opened=audio.connectSpeech(payload);
+    if(opened){
+      uint32_t last=millis();
+      while(stream.poll()&&millis()-last<30000&&millis()-startedAt<180000){
+        int budget=4096;
+        while(budget--&&audio.available()){int b=audio.read();if(b<0)break;if(!stream.put((char)b))break;++bytes;last=millis();}
+        if(!shown&&stream.ready()){if(speechScreen)speechScreen();else showAskSpeaking(text,sourceCount);shown=true;audioPlaying=true;stream.start();}
+        if(!audio.available()&&!audio.connected()){complete=pcmStreamValid(bytes)&&!audio.failed();break;}
+        delay(1);
+      }
+    }
+    audio.stop();
+    if(complete&&!shown){if(speechScreen)speechScreen();else showAskSpeaking(text,sourceCount);shown=true;audioPlaying=true;}
+    const bool ok=stream.finish(complete),wasCancelled=stream.wasCancelled();
+    if(cancelled)*cancelled=wasCancelled;
+    audioPlaying=false;pikaSoundSetEnabled(true);performanceStats.speechMs=millis()-startedAt;
+    Serial.printf("[TTS] companion opened=%d bytes=%u complete=%d shown=%d cancelled=%d ok=%d elapsed=%lu ms\n",opened,unsigned(bytes),complete,shown,wasCancelled,ok,(unsigned long)performanceStats.speechMs);
+    if(!ok&&!wasCancelled)pikaError("audio",opened?"speech-receive":"speech-connect",String("Companion speech failed: bytes=")+String((unsigned long)bytes)+" shown="+String(int(shown)),0,performanceStats.speechMs);
+    return ok;
+  }
   for (int attempt = 0; attempt < 2; ++attempt) {
   PikaSpeechStream stream;
   bool shown = false, complete = false;

@@ -11,6 +11,7 @@
 #include "notes.h"
 #include "settings.h"
 #include "ui.h"
+#include "draw.h"
 #include "pcm_resampler.h"
 #include "wav_payload.h"
 #include "../../sounds.h"
@@ -31,12 +32,17 @@ int recordingUiMarkerCount = 0;
 void recordingUiTask(void*) {
   // E-paper is intentionally refreshed on the other ESP32 core. The recording
   // loop must keep draining I2S while the comparatively slow panel updates.
+  // Home is refreshed asynchronously too. Wait on this UI worker, not in
+  // the microphone loop, before touching its shared framebuffer or SPI bus.
+  pikaWaitHomeRefresh();
+  Serial.printf("[RecUI] begin question=%d ended=%d at=%lu\n",recordingUiQuestion,recordingEnded.load(),(unsigned long)millis());
   if (recordingEnded) { showRecordingStopped(recordingUiQuestion); recordingEndedDrawn=true; }
   else if (recordingUiProgress) showRecordingProgress(recordingUiMarkerMs, recordingUiMarkerCount);
   else if (recordingUiQuestion) showAskListening();
   else showRecording();
   // Release may arrive while the panel is still painting Listening.
   if(recordingEnded&&!recordingEndedDrawn){showRecordingStopped(recordingUiQuestion);recordingEndedDrawn=true;}
+  Serial.printf("[RecUI] painted stopped=%d at=%lu\n",recordingEndedDrawn.load(),(unsigned long)millis());
   recordingUiBusy = false;
   vTaskDelete(nullptr);
 }

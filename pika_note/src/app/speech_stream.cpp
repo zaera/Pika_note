@@ -122,6 +122,7 @@ void PikaSpeechStream::worker(void* context) {
     audio_idle_suspend();
   }
   if(stream.failed.load())pikaError("audio","playback","I2S playback failed or incomplete stream");
+  if(stream.cancelled.load()&&outputBytes==0)pikaError("audio","cancel-before-playback","Playback cancelled by a button before any audio was output");
   Serial.printf("[Audio] stream output=%lu bytes rebuffer=%lu cancelled=%d failed=%d\n",
     (unsigned long)outputBytes, (unsigned long)underruns, stream.cancelled.load(), stream.failed.load());
   stream.done.store(true, std::memory_order_release);
