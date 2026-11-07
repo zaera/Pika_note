@@ -6,6 +6,8 @@
 #include "data_files.h"
 #include <SD_MMC.h>
 #include <mbedtls/base64.h>
+#include <memory>
+#include <esp_heap_caps.h>
 namespace {
 int error(JsonDocument& out,int code,const char* message){out["error"]=message;return code;}
 bool hexDigest(const String& value){if(value.length()!=64)return false;for(char c:value)if(!((c>='0'&&c<='9')||(c>='a'&&c<='f')))return false;return true;}
@@ -23,12 +25,12 @@ int pikaPhoneVoiceImport(JsonVariantConst req,JsonDocument& out){
  JsonDocument saved;bool matching=pikaDataReadJson(meta,saved,4096)&&String(saved["token"]|"")==token&&String(saved["sha256"]|"")==sha&&(saved["size"]|0UL)==size;
  if(action=="begin"){
   if(!matching){pikaPhoneHashCancel();SD_MMC.remove(part);saved.clear();saved["token"]=token;saved["sha256"]=sha;saved["size"]=size;if(!pikaDataWriteJson(meta,saved))return error(out,500,"Cannot save upload intent");}
-  File f=SD_MMC.open(part,FILE_APPEND);if(!f)return error(out,500,"Cannot create recording stage");const uint32_t offset=f.size();f.close();if(offset>size)return error(out,409,"Recording stage is larger than expected");out["offset"]=offset;out["done"]=false;return 200;
+  File f=SD_MMC.open(part,FILE_APPEND);if(!f)return error(out,500,"Cannot create recording stage");const uint32_t offset=f.size();f.close();if(offset>size)return error(out,409,"Recording stage is larger than expected");out["offset"]=offset;out["done"]=false;out["chunkBytes"]=32768;return 200;
  }
  if(!matching)return error(out,409,"Start recording upload first");
  if(action=="chunk"){
-  const uint32_t offset=req["offset"]|0UL;String encoded=req["data"]|"";if(!encoded.length()||encoded.length()>5464)return error(out,400,"Invalid recording chunk");uint8_t bytes[4096];size_t count=0;if(mbedtls_base64_decode(bytes,sizeof(bytes),&count,(const unsigned char*)encoded.c_str(),encoded.length())||!count)return error(out,400,"Invalid recording chunk encoding");
-  File f=SD_MMC.open(part,FILE_APPEND);if(!f)return error(out,500,"Recording stage unavailable");uint32_t current=f.size();if(offset==current){if(count>size-current){f.close();return error(out,400,"Recording exceeds declared size");}pikaPhoneHashCancel();size_t written=f.write(bytes,count);f.flush();current=f.size();f.close();if(written!=count)return error(out,500,"Recording write failed");}else{f.close();if(offset>current)return error(out,409,"Recording chunk has a gap");}out["offset"]=current;return 200;
+  const uint32_t offset=req["offset"]|0UL;const char* encoded=req["data"]|"";const size_t encodedSize=strlen(encoded);if(!encodedSize||encodedSize>43692)return error(out,400,"Invalid recording chunk");std::unique_ptr<uint8_t,decltype(&free)> bytes((uint8_t*)heap_caps_malloc(32768,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT),free);if(!bytes)return error(out,503,"Recording buffer unavailable; retry later");size_t count=0;if(mbedtls_base64_decode(bytes.get(),32768,&count,(const unsigned char*)encoded,encodedSize)||!count)return error(out,400,"Invalid recording chunk encoding");
+  File f=SD_MMC.open(part,FILE_APPEND);if(!f)return error(out,500,"Recording stage unavailable");uint32_t current=f.size();if(offset==current){if(count>size-current){f.close();return error(out,400,"Recording exceeds declared size");}pikaPhoneHashCancel();size_t written=f.write(bytes.get(),count);f.flush();current=f.size();f.close();if(written!=count)return error(out,500,"Recording write failed");}else{f.close();if(offset>current)return error(out,409,"Recording chunk has a gap");}out["offset"]=current;return 200;
  }
  if(action=="commit"){
   File f=SD_MMC.open(part);bool complete=f&&f.size()==size;if(f)f.close();if(!complete)return error(out,409,"Recording is incomplete");String digest;String relative=part.substring(7);int status=pikaPhoneHashRequest(relative,digest);if(status==202){out["pending"]=true;return 202;}if(status!=200||digest!=sha||!validWav(part,size))return error(out,409,"Recording checksum or WAV header mismatch");pikaPhoneHashCancel();if(!pikaPhoneFileWillChange(file.c_str()))return error(out,500,"Cannot save recovery intent");if(!SD_MMC.rename(part,file))return error(out,500,"Cannot commit recording");completed(note,file,meta,part,out);return 200;

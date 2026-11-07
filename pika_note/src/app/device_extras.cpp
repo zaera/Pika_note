@@ -9,7 +9,7 @@ namespace {
 RTC_DATA_ATTR bool clockMode=false;
 Preferences preferences;
 bool strictCapture=false,voiceRecordActions=false;
-int sleepMinutes=1;
+int sleepMinutes=1;float batteryCalibration=1.0f;
 bool vibrationEnabled=false;int vibrationPatterns[6]={1,2,9,1,1,3};
 bool alerts=true;int leadMinutes=30,durationSeconds=60;
 bool notify=false;int notifyMelodies[7]={5,6,7,6,8,11,12};int melody=0;String buttonActions[PIKA_GESTURES];
@@ -19,6 +19,7 @@ bool seen(const BrainTaskRecord& task){const auto hash=token(task);for(auto valu
 time_t eventTime(const BrainTaskRecord& task){if(task.type!="event"||task.done||task.archived||task.datePrecision=="day"||task.dueUtc.length()<19)return 0;struct tm value={};int y,m,d,h,n,s;if(sscanf(task.dueUtc.c_str(),"%d-%d-%dT%d:%d:%d",&y,&m,&d,&h,&n,&s)!=6)return 0;value.tm_year=y-1900;value.tm_mon=m-1;value.tm_mday=d;value.tm_hour=h;value.tm_min=n;value.tm_sec=s;return utcTmToEpoch(value);}
 }
 void pikaExtrasBegin(){preferences.begin("pikaExtras",false);
+ batteryCalibration=preferences.getFloat("batteryCal",1.0f);if(!(batteryCalibration>=0.90f&&batteryCalibration<=1.10f))batteryCalibration=1.0f;
  sleepMinutes=preferences.getInt("sleepMinutes",1);if(sleepMinutes<1||sleepMinutes>5)sleepMinutes=1;
  strictCapture=preferences.getBool("strictCapture",false);
  voiceRecordActions=preferences.getBool("voiceActions",false);
@@ -88,3 +89,6 @@ bool pikaSaveVibration(bool enabled,const int* values){
 int pikaSleepMinutes(){return sleepMinutes;}
 uint32_t pikaSleepIdleMs(){return uint32_t(sleepMinutes)*60000UL;}
 bool pikaSaveSleepMinutes(int minutes){if(minutes<1||minutes>5)return false;if(preferences.putInt("sleepMinutes",minutes)!=sizeof(int))return false;sleepMinutes=minutes;return true;}
+
+float pikaBatteryCalibration(){return batteryCalibration;}
+bool pikaSaveBatteryCalibration(float factor){if(!(factor>=0.90f&&factor<=1.10f)||preferences.putFloat("batteryCal",factor)!=sizeof(float))return false;batteryCalibration=factor;return true;}

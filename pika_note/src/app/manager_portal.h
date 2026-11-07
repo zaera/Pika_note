@@ -15,13 +15,13 @@
 
 static uint32_t managerLastRequest=0;
 static void managerDeviceJson(JsonObject device){device["serial"]=pikaDeviceSerial();
-  static BatteryReading battery;static uint32_t sampled=0;static bool ready=false;
+  static BatteryReading battery;static uint32_t sampled=0;static bool ready=false;static float sampledFactor=0;
   // f_getfree can scan the entire FAT. Preserve telemetry across deep sleep;
   // refresh it at a cold boot, never on a Home sync/status request after wake.
   static RTC_DATA_ATTR uint32_t storageMagic=0;
   static RTC_DATA_ATTR uint64_t total=0,used=0;
   if(storageMagic!=0x53444348||!total||used>total){total=SD_MMC.totalBytes();used=SD_MMC.usedBytes();if(total)storageMagic=0x53444348;}
-  if(!ready||millis()-sampled>=30000UL){battery=readBattery();sampled=millis();ready=true;}
+  if(!ready||millis()-sampled>=30000UL||sampledFactor!=pikaBatteryCalibration()){battery=readBattery();sampled=millis();sampledFactor=pikaBatteryCalibration();ready=true;}
   device["batteryValid"]=battery.valid;
   if(battery.valid){device["batteryPercent"]=battery.percent;device["batteryMillivolts"]=battery.millivolts;}
   device["storageTotal"]=total;device["storageUsed"]=used;device["storageFree"]=total>=used?total-used:0;
@@ -40,7 +40,7 @@ static String managerDefaultEnd(const String& local){
 static void managerSettingsJson(JsonObject settings){
   pikaWeatherSettingsJson(settings);
   pikaMailSettingsJson(settings);
-  settings["sleepMinutes"]=pikaSleepMinutes();
+  settings["sleepMinutes"]=pikaSleepMinutes();settings["batteryCalibration"]=pikaBatteryCalibration();
   settings["activityLed"]=pikaActivityLedEnabled();
   settings["buildCommit"]=PIKA_GIT_COMMIT;settings["firmwareVersion"]=FIRMWARE_VERSION;
   settings["vibrationEnabled"]=pikaVibrationEnabled();{auto values=settings["vibrationPatterns"].to<JsonArray>();for(int i=0;i<6;i++)values.add(pikaVibrationPattern(i));}
@@ -159,6 +159,7 @@ static void handleManagerSettings(){
   else if(action=="askAppend")ok=pikaAskImportTurn(request["id"]|"",request["question"]|"",request["answer"]|"",request["createdUtc"]|"");
   else if(action=="askRenew")ok=pikaAskRenew();
   else if(action=="usbMount")ok=pikaUsbBackupRequest();
+  else if(action=="batteryCalibrate"){ok=(request["confirmed"]|false)&&batteryCalibrateFull(request["reset"]|false);}
   else if(action=="sleep"){ok=request["minutes"].is<int>()&&pikaSaveSleepMinutes(request["minutes"].as<int>());if(ok)resetActivity();}
   else if(action=="activityLed")ok=request["enabled"].is<bool>()&&pikaActivityLedSave(request["enabled"].as<bool>());
   else if(action=="mail")ok=pikaMailSave(request.as<JsonObjectConst>());
@@ -188,6 +189,7 @@ static void handleManagerSettings(){
   else if(action=="googleImport"){ok=pikaGoogleRequestImport(request["from"]|"",request["through"]|"");}
   else if(action=="googleSync"){ok=pikaGoogleSyncEnabled();if(ok){pikaGoogleResetSession();pikaGoogleRequestVerify();}}
   if(!ok){managerJsonError(400,"Could not save settings. Check the entered fields.");return;}
+  if(action=="batteryCalibrate"){invalidatePortalCache();JsonDocument doc;doc["saved"]=true;doc["factor"]=pikaBatteryCalibration();managerDeviceJson(doc["device"].to<JsonObject>());String out;serializeJson(doc,out);transferServer.send(200,"application/json",out);return;}
   if(action!="soundTest"&&action!="vibrationTest")invalidatePortalCache();transferServer.sendHeader("Cache-Control","no-store");transferServer.send(200,"application/json","{\"saved\":true}");
 }
 static void handleManagerApp(){

@@ -3,6 +3,7 @@
 #include "phone_sync.h"
 #include "sleep.h"
 #include "phone_link.h"
+#include "phone_lan.h"
 #include "web_pin.h"
 #include "activity_led.h"
 #include "ui.h"
@@ -58,11 +59,11 @@ void replyWorker(void*){for(;;){
  ReplyJob job;if(xQueueReceive(replyQueue,&job,portMAX_DELAY)!=pdTRUE)continue;
  auto wait=[&](){while((foreground||pikaHomeButtonsBusy())&&online&&session==job.epoch)vTaskDelay(pdMS_TO_TICKS(5));return online&&session==job.epoch;};
  if(wait()){
-  const bool bulk=job.bulk&&bulkSubscribed&&mtu.load()>=185&&job.size>=1024;bulkChannel=job.channel;bulkConfirmed=0;
+  const bool bulk=!pikaLanOnline()&&job.bulk&&bulkSubscribed&&mtu.load()>=185&&job.size>=1024;bulkChannel=job.channel;bulkConfirmed=0;
   JsonDocument doc;doc["status"]=job.code;doc["length"]=job.size;if(bulk)doc["window"]=4000;
-  String head;serializeJson(doc,head);bool ok=pikaPhoneSend(23,job.channel,(const uint8_t*)head.c_str(),head.length());
-  for(size_t at=0;ok&&at<job.size;){if(!wait()){ok=false;break;}const size_t n=std::min<size_t>(bulk?4000:2000,job.size-at);ok=bulk?sendBulk(job.channel,job.data+at,n,at,job.epoch):pikaPhoneSend(24,job.channel,job.data+at,n);at+=n;vTaskDelay(1);}
-  if(wait())pikaPhoneSend(25,job.channel,nullptr,0);bulkChannel=0;
+  String head;serializeJson(doc,head);if(pikaLanOnline())Serial.printf("LAN_META ch=%u size=%u heap=%u foreground=%d\n",job.channel,unsigned(job.size),ESP.getFreeHeap(),foreground.load());bool ok=pikaPhoneSend(23,job.channel,(const uint8_t*)head.c_str(),head.length());
+  for(size_t at=0;ok&&at<job.size;){if(!wait()){ok=false;break;}const size_t n=std::min<size_t>(bulk?4000:(pikaLanOnline()?32000:2000),job.size-at);ok=bulk?sendBulk(job.channel,job.data+at,n,at,job.epoch):pikaPhoneSend(24,job.channel,job.data+at,n);at+=n;vTaskDelay(1);}
+  if(pikaLanOnline())Serial.printf("LAN_END ch=%u ok=%d size=%u heap=%u\n",job.channel,ok,unsigned(job.size),ESP.getFreeHeap());if(!ok)Serial.printf("PIKA_REPLY_FAIL channel=%u bytes=%u lan=%d heap=%u\n",job.channel,unsigned(job.size),pikaLanOnline(),ESP.getFreeHeap());if(wait())pikaPhoneSend(25,job.channel,nullptr,0);bulkChannel=0;
  }
  heap_caps_free(job.data);
 }}
@@ -89,7 +90,7 @@ void controlWorker(void*){
    }
 
    if(welcome.exchange(false)&&online){
-    resetActivity();JsonDocument reply;reply["authenticated"]=true;reply["version"]=3;reply["protocol"]=4;reply["speechFast"]=true;reply["serial"]=pikaDeviceSerial();reply["ownerBound"]=true;String body;serializeJson(reply,body);
+    resetActivity();JsonDocument reply;reply["authenticated"]=true;reply["version"]=3;reply["protocol"]=4;reply["speechFast"]=true;reply["lanBoost"]=true;reply["serial"]=pikaDeviceSerial();reply["ownerBound"]=true;String body;serializeJson(reply,body);
     pikaPhoneSend(7,0,(const uint8_t*)body.c_str(),body.length());foregroundNotice=true;
    }
    if(hello.exchange(false)&&subscribed&&secure&&!online){
@@ -119,20 +120,16 @@ void controlWorker(void*){
 class ServerCallbacks:public NimBLEServerCallbacks{
  uint32_t onPassKeyDisplay()override{return pairCode;}
  void onConnect(NimBLEServer*,NimBLEConnInfo& info)override{if(conn!=0xffff&&conn!=info.getConnHandle()){server->disconnect(info.getConnHandle());return;}previouslyBonded=NimBLEDevice::isBonded(info.getIdAddress());peerIdentity=String(info.getIdAddress().toString().c_str());++session;conn=info.getConnHandle();connectedAt=millis();server->updateConnParams(conn,6,12,0,200);}
- void onDisconnect(NimBLEServer*,NimBLEConnInfo& info,int)override{if(info.getConnHandle()!=conn)return;++session;conn=0xffff;mtu=23;nonce="";authMessage="";online=false;secure=false;subscribed=false;bulkSubscribed=false;indicationSubscribed=false;uploadFast=false;welcome=false;hello=false;if(xSemaphoreTake(rpcMutex,pdMS_TO_TICKS(20))==pdTRUE){rpc="";rpcReady=false;rpcChannel=0;xSemaphoreGive(rpcMutex);}for(auto& c:channels){if(c.state>0)c.state=-2;else if(c.state==-3)c.state=0;}if(!shuttingDown)NimBLEDevice::startAdvertising();}
+ void onDisconnect(NimBLEServer*,NimBLEConnInfo& info,int)override{if(info.getConnHandle()!=conn)return;pikaLanStop();++session;conn=0xffff;mtu=23;nonce="";authMessage="";online=false;secure=false;subscribed=false;bulkSubscribed=false;indicationSubscribed=false;uploadFast=false;welcome=false;hello=false;if(xSemaphoreTake(rpcMutex,pdMS_TO_TICKS(20))==pdTRUE){rpc="";rpcReady=false;rpcChannel=0;xSemaphoreGive(rpcMutex);}for(auto& c:channels){if(c.state>0)c.state=-2;else if(c.state==-3)c.state=0;}if(!shuttingDown)NimBLEDevice::startAdvertising();}
  void onMTUChange(uint16_t value,NimBLEConnInfo&)override{mtu=value;}
  void onAuthenticationComplete(NimBLEConnInfo& info)override{secure=info.isEncrypted();if(!secure)server->disconnect(info.getConnHandle());else{peerIdentity=String(info.getIdAddress().toString().c_str());if(subscribed)hello=true;}}
 } serverCallbacks;
-class Callbacks:public NimBLECharacteristicCallbacks{
- void onStatus(NimBLECharacteristic*,int code)override{if(code==0)return;ackCode=code;if(ack)xSemaphoreGive(ack);}
- void onSubscribe(NimBLECharacteristic*,NimBLEConnInfo& info,uint16_t value)override{subscribed=(value&3)!=0;indicationSubscribed=(value&2)!=0;bulkSubscribed=(value&1)!=0;secure=info.isEncrypted();if(subscribed&&secure)hello=true;}
- void onWrite(NimBLECharacteristic* ch,NimBLEConnInfo& info)override{
-  if(info.getConnHandle()!=conn||!info.isEncrypted())return;const auto value=ch->getValue();const auto* data=(const uint8_t*)value.data();const size_t n=value.size();if(n<6)return;
+void receiveFrame(const uint8_t* frame,size_t n,bool bonded){if(n<6)return;const uint8_t* data=frame;
   const uint8_t op=data[0]&127,id=data[1];const size_t length=data[4]|(size_t(data[5])<<8);if(length!=n-6)return;data+=6;trafficAt=millis();pikaActivityLedTraffic(true);
   if(op==1){
    if(online||authPending.load(std::memory_order_acquire)||nonce.length()!=64||(failedUntil&&int32_t(millis()-failedUntil)<0))return;
-   if(authMessage.length()+length>512){authMessage="";return;}authMessage.concat((const char*)data,length);if(!(value.data()[0]&128))return;
-   strlcpy(authJob.body,authMessage.c_str(),sizeof(authJob.body));strlcpy(authJob.peer,peerIdentity.c_str(),sizeof(authJob.peer));strlcpy(authJob.challenge,nonce.c_str(),sizeof(authJob.challenge));authJob.epoch=session.load();authJob.bonded=info.isBonded();authMessage="";
+   if(authMessage.length()+length>512){authMessage="";return;}authMessage.concat((const char*)data,length);if(!(frame[0]&128))return;
+   strlcpy(authJob.body,authMessage.c_str(),sizeof(authJob.body));strlcpy(authJob.peer,peerIdentity.c_str(),sizeof(authJob.peer));strlcpy(authJob.challenge,nonce.c_str(),sizeof(authJob.challenge));authJob.epoch=session.load();authJob.bonded=bonded;authMessage="";
    authPending.store(true,std::memory_order_release);return;
   }
   if(!online)return;
@@ -156,11 +153,18 @@ class Callbacks:public NimBLECharacteristicCallbacks{
    return;
   }
   if(id>=128)rpcAt=millis();
-  if(id>=128&&op==26&&xSemaphoreTake(rpcMutex,pdMS_TO_TICKS(20))==pdTRUE){if(!rpcReady){if(rpcChannel!=id){rpc="";rpcChannel=id;}if(rpc.length()+length<=65536){rpc.concat((const char*)data,length);if(value.data()[0]&128)rpcReady=true;}else{rpc="";rpcChannel=0;}}xSemaphoreGive(rpcMutex);return;}
+  if(id>=128&&op==26&&xSemaphoreTake(rpcMutex,pdMS_TO_TICKS(20))==pdTRUE){if(!rpcReady){if(rpcChannel!=id){rpc="";rpc.reserve(65536);rpcChannel=id;}if(rpc.length()+length<=65536){rpc.concat((const char*)data,length);if(frame[0]&128)rpcReady=true;}else{rpc="";rpcChannel=0;}}xSemaphoreGive(rpcMutex);return;}
   if(id>=128&&op>=20&&op<=22&&xSemaphoreTake(rpcMutex,pdMS_TO_TICKS(20))==pdTRUE){
    if(op==20&&!rpcReady){rpc="";rpcChannel=id;}else if(op==21&&!rpcReady&&id==rpcChannel&&rpc.length()+length<=65536)rpc.concat((const char*)data,length);else if(op==22&&!rpcReady&&id==rpcChannel)rpcReady=true;
    xSemaphoreGive(rpcMutex);
   }
+}
+class Callbacks:public NimBLECharacteristicCallbacks{
+ void onStatus(NimBLECharacteristic*,int code)override{if(code==0)return;ackCode=code;if(ack)xSemaphoreGive(ack);}
+ void onSubscribe(NimBLECharacteristic*,NimBLEConnInfo& info,uint16_t value)override{subscribed=(value&3)!=0;indicationSubscribed=(value&2)!=0;bulkSubscribed=(value&1)!=0;secure=info.isEncrypted();if(subscribed&&secure)hello=true;}
+ void onWrite(NimBLECharacteristic* ch,NimBLEConnInfo& info)override{
+  if(info.getConnHandle()!=conn||!info.isEncrypted())return;const auto value=ch->getValue();const auto* data=(const uint8_t*)value.data();const size_t n=value.size();if(n<6)return;
+  receiveFrame(data,n,info.isBonded());
  }
 } callbacks;
 }
@@ -177,6 +181,7 @@ void pikaPhoneBegin(){
 }
 bool pikaPhoneSend(uint8_t op,uint8_t channel,const uint8_t* data,size_t size){
  if(!server||!subscribed||!secure||(!online&&op!=0))return false;
+ if(op>=2&&op!=7&&op!=30&&op!=31&&pikaLanOnline()){trafficAt=millis();pikaActivityLedTraffic(true);bool ok=pikaLanSend(op,channel,data,size);if(ok&&op>=23&&op<=25){rpcAt=millis();pikaPhoneSyncProgress();}return ok;}
  const bool interruptible=(op==2||op==4||op==5)&&pikaBackgroundNetworkMode()&&!foreground;
  if(interruptible&&preemptBackground())return false;
  const uint32_t waiting=millis();while(xSemaphoreTake(txMutex,pdMS_TO_TICKS(5))!=pdTRUE){if((interruptible&&preemptBackground())||millis()-waiting>=10000)return false;}
@@ -198,12 +203,12 @@ void pikaPhoneService(){
  pikaActivityLedTraffic(trafficAt&&millis()-trafficAt<180);
  if(displayedOnline!=online.load()){displayedOnline=online;homeChangedAt=millis();homeDirty=true;lastSentGeneration=0;}
 }
-void pikaPhoneSleep(){online=false;shuttingDown=true;foreground=true;if(server&&xSemaphoreTake(txMutex,pdMS_TO_TICKS(10000))==pdTRUE){NimBLEDevice::deinit(true);server=nullptr;tx=nullptr;xSemaphoreGive(txMutex);}}
+void pikaPhoneSleep(){pikaLanStop();online=false;shuttingDown=true;foreground=true;if(server&&xSemaphoreTake(txMutex,pdMS_TO_TICKS(10000))==pdTRUE){NimBLEDevice::deinit(true);server=nullptr;tx=nullptr;xSemaphoreGive(txMutex);}}
 bool pikaPhoneTakeRpc(String& request,uint8_t& channel){if(!rpcMutex||xSemaphoreTake(rpcMutex,0)!=pdTRUE)return false;const bool ready=rpcReady;if(ready){request=std::move(rpc);channel=rpcChannel;rpcReady=false;rpcChannel=0;}xSemaphoreGive(rpcMutex);return ready;}
 void pikaPhoneReply(uint8_t channel,int code,const String& body,bool bulk){ReplyJob job{channel,code,session.load(),body.length(),nullptr,bulk};job.data=(uint8_t*)heap_caps_malloc(std::max<size_t>(1,job.size),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);if(!job.data)return;if(job.size)memcpy(job.data,body.c_str(),job.size);if(!replyQueue||xQueueSend(replyQueue,&job,0)!=pdTRUE)heap_caps_free(job.data);}
 int PhoneSecureClient::connect(const char* host,uint16_t port,int32_t timeout){stop();if(preemptBackground())return 0;if(!online||port!=443)return 0;
  if(xSemaphoreTake(slotMutex,pdMS_TO_TICKS(1000))!=pdTRUE)return 0;for(int i=0;i<8;i++)if(channels[i].state==0){channel=i;auto& c=channels[i];if(!c.ring)c.ring=(uint8_t*)heap_caps_malloc(ringSize,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);if(!c.ring){channel=-1;break;}c.head=0;c.tail=0;c.speechToken=0;c.uploadSent=0;c.uploadAccepted=0;c.uploadAckVersion=0;c.uploadToken=esp_random();c.state=2;break;}xSemaphoreGive(slotMutex);if(channel<0)return 0;
- JsonDocument doc;doc["host"]=host;doc["port"]=port;if(uploadFast&&uploadAllowed&&bulkSubscribed&&mtu.load()>=185)doc["uploadToken"]=channels[channel].uploadToken.load();String body;serializeJson(doc,body);if(!pikaPhoneSend(2,channel+1,(const uint8_t*)body.c_str(),body.length())){stop();return 0;}
+ JsonDocument doc;doc["host"]=host;doc["port"]=port;if(!pikaLanOnline()&&uploadFast&&uploadAllowed&&bulkSubscribed&&mtu.load()>=185)doc["uploadToken"]=channels[channel].uploadToken.load();String body;serializeJson(doc,body);if(!pikaPhoneSend(2,channel+1,(const uint8_t*)body.c_str(),body.length())){stop();return 0;}
  const uint32_t started=millis();while(online&&channels[channel].state==2&&millis()-started<uint32_t(std::max<int32_t>(timeout,15000))){if(preemptBackground()){stop();return 0;}delay(2);}if(channels[channel].state!=1){stop();return 0;}return 1;
 }
 namespace {
@@ -240,7 +245,7 @@ bool sendUploadWindow(int index,const uint8_t* bytes,size_t n){
 }
 size_t PhoneSecureClient::write(const uint8_t* bytes,size_t n){
  if(channel<0||!online||channels[channel].state!=1)return 0;
- if(!uploadFast||!uploadAllowed||!bulkSubscribed||mtu.load()<185)return pikaPhoneSend(4,channel+1,bytes,n)?n:0;
+ if(pikaLanOnline()||!uploadFast||!uploadAllowed||!bulkSubscribed||mtu.load()<185)return pikaPhoneSend(4,channel+1,bytes,n)?n:0;
  const uint32_t began=millis();size_t at=0;while(at<n){const size_t count=std::min<size_t>(4096,n-at);if(!sendUploadWindow(channel,bytes+at,count)){channels[channel].state=-2;break;}at+=count;}
  if(n>=4096)Serial.printf("[PhoneUpload] bytes=%u ms=%lu window=4096\n",unsigned(at),(unsigned long)(millis()-began));return at;
 }
@@ -263,7 +268,7 @@ int PhoneSecureClient::connectSpeech(const String& payload){stop();if(!online)re
 
 bool PhoneSecureClient::failed()const{return channel<0||!online||channels[channel].state==-2;}
 
-String pikaPhoneDiagnostics(){return String("PIKA_PHONE online=")+online.load()+" secure="+secure.load()+" peer="+String(conn)+" mtu="+String(mtu.load());}
+String pikaPhoneDiagnostics(){return String("PIKA_PHONE online=")+online.load()+" secure="+secure.load()+" peer="+String(conn)+" mtu="+String(mtu.load())+" lan="+String(pikaLanOnline());}
 
 void pikaPhoneForeground(bool active){if(foreground.exchange(active)!=active)foregroundNotice=true;}
 bool pikaPhoneForegroundActive(){return foreground;}
@@ -283,3 +288,7 @@ void pikaPhoneUseWindowUpload(bool enabled){uploadAllowed=enabled;}
 bool pikaPhoneQueueLiveSnapshot(const String& json){
  if(!online||!liveQueue||!json.length()||json.length()>262144)return false;LiveJob job{nullptr,json.length(),session.load(),esp_random()};job.data=(uint8_t*)heap_caps_malloc(job.size,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);if(!job.data)return false;memcpy(job.data,json.c_str(),job.size);LiveJob previous;if(xQueueReceive(liveQueue,&previous,0)==pdTRUE)heap_caps_free(previous.data);if(xQueueSend(liveQueue,&job,0)!=pdTRUE){heap_caps_free(job.data);return false;}return true;
 }
+
+void pikaPhoneReceiveLan(const uint8_t* frame,size_t size){if(!online||size<6||(frame[0]&127)==1)return;receiveFrame(frame,size,true);}
+void pikaPhoneLanLost(){for(auto& c:channels)if(c.state>0)c.state=-2;if(xSemaphoreTake(rpcMutex,pdMS_TO_TICKS(20))==pdTRUE){if(!rpcReady){rpc="";rpcChannel=0;}xSemaphoreGive(rpcMutex);}}
+void pikaPhoneLanTraffic(){trafficAt=millis();pikaActivityLedTraffic(true);}

@@ -1,3 +1,5 @@
+#include <esp_heap_caps.h>
+#include "src/app/phone_lan.h"
 #include "src/app/brand_compat.h"
 #include "src/app/recovery_buttons.h"
 #include "src/app/device_owner.h"
@@ -189,7 +191,7 @@ String usbAskTestQuestion;
 bool usbAskRenewRequested=false;
 bool usbFeedbackTestRequested=false;
 bool usbReminderTest=false;
-bool usbSleepRequested=false;
+bool usbSleepRequested=false;uint32_t usbKeepAwakeUntil=0;
 bool usbWeatherRequested=false;
 bool usbCalendarRequested=false;
 bool usbWifiPerfRequested=false,usbStatusRequested=false;int usbVoiceBench=0;
@@ -220,6 +222,8 @@ void applyUsbSetupLine(const String& line) {
   if(line=="CALENDAR"){usbCalendarRequested=true;Serial.println("PIKA_CALENDAR_QUEUED");return;}
   if(line=="WEATHER"){usbWeatherRequested=true;Serial.println("PIKA_WEATHER_QUEUED");return;}
   if(line=="REMINDER_TEST"){usbReminderTest=true;Serial.println("PIKA_REMINDER_TEST_QUEUED");return;}
+  if(line=="TEST_HOLD"){usbKeepAwakeUntil=millis()+600000;Serial.println("PIKA_TEST_HOLD_10_MIN");return;}
+  if(line=="TEST_RELEASE"){usbKeepAwakeUntil=0;resetActivity();Serial.println("PIKA_TEST_HOLD_RELEASED");return;}
   if(line=="SLEEP"){usbSleepRequested=true;Serial.println("PIKA_SLEEP_QUEUED");return;}
   if (!line.startsWith("PIKA_SETUP_V1 ")) return;
   if (line.length() > 700) { replyUsbSetup("ERROR", "TOO_LONG"); return; }
@@ -307,7 +311,7 @@ void powerOnPeripherals() {
 
 // Short foreground lease avoids reassociation between successive questions.
 uint32_t wifiLeaseEndsAt=0;
-void stopWifi(bool force=false){WiFi.mode(WIFI_OFF);}
+void stopWifi(bool force=false){if(force||!pikaLanConfigured())WiFi.mode(WIFI_OFF);}
 void serviceWifiLease(){}
 
 String localDayKey() {
@@ -887,6 +891,7 @@ void handleAgenda() {
 }
 
 void handleBackgroundBrain(){
+ if(pikaPhoneSyncActive())return;
  if(!pikaPhoneOnline()||!pikaHasOpenAiKey()||pikaHomeButtonsBusy()||!bothButtonsUp()||pikaPhoneTransferRecent())return;
  if(millis()-lastActivityMs<BACKGROUND_IDLE_MS||millis()-lastActivityMs>=pikaSleepIdleMs())return;
  if(nextBackgroundAttemptAt&&int32_t(millis()-nextBackgroundAttemptAt)<0)return;
@@ -1068,6 +1073,7 @@ void setup() {
     while (true) delay(1000);
   }
 
+  heap_caps_malloc_extmem_enable(512); // Keep large String/JSON/network buffers out of scarce internal RAM.
   pikaAskStagesBegin(); // Reserve the 32KB stack before BLE/audio fragment internal RAM.
   Serial.printf("V7_BOOT phase=ble reset=%d heap=%u\n",int(esp_reset_reason()),ESP.getFreeHeap());
   if(!pikaFactoryPending())pikaPhoneBegin(); // Never advertise until a pending factory erase finishes.
@@ -1127,6 +1133,7 @@ void traceHomeWork(const char* name,void(*work)()){
  if(elapsed>=100)Serial.printf("PIKA_HOME_WORK name=%s ms=%lu\n",name,(unsigned long)elapsed);
 }
 void loop() {
+  if(usbKeepAwakeUntil&&int32_t(usbKeepAwakeUntil-millis())>0)resetActivity();
   if(pikaRecoveryRestartRequested()){pikaHomeButtonsEnable(false);pikaPhoneForeground(true);showRebooting();delay(1000);showRebootSleep();delay(350);pikaRecoveryMarkResume();ESP.restart();return;}
   pikaRtcServicePhoneTime();
   if(pikaOwnerRestartAt){if(int32_t(millis()-pikaOwnerRestartAt)>=0)ESP.restart();pikaPhoneService();delay(2);return;}

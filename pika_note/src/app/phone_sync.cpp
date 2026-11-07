@@ -25,7 +25,7 @@ class JsonHash:public Print{mbedtls_sha256_context ctx;public:bool ok=true;JsonH
 String digest(JsonVariantConst value){JsonHash hash;serializeJson(value,hash);return hash.finish();}
 PsramAllocator allocator;JsonDocument catalog(&allocator);String lastFailure;uint32_t lastFailureLog=0;bool loaded=false,fullScanNeeded=true;std::atomic<bool> dirty{true},intentArmed{false};
 std::mutex touchedMutex;std::set<String> touched;
-uint32_t leaseAt=0,leaseStarted=0;
+std::atomic<uint32_t> leaseAt{0},leaseStarted{0};
 bool fail(const char* stage){if(String(stage)!="input_pending"&&String(stage)!=lastFailure)pikaError("sync",stage,"Library synchronization failed");dirty=true;lastFailure=stage;if(!lastFailureLog||millis()-lastFailureLog>1000){lastFailureLog=millis();Serial.printf("[PhoneSync] %s heap=%u psram=%u stack=%u\n",stage,ESP.getFreeHeap(),ESP.getFreePsram(),uxTaskGetStackHighWaterMark(nullptr));}return false;}
 bool normalFile(const String& name){return pikaPhoneNormalFile(name);}
 bool armIntent(){if(intentArmed)return true;if(SD_MMC.exists(intentPath)){intentArmed=true;return true;}File f=SD_MMC.open(intentPath,FILE_WRITE);if(!f)return false;const char text[]="PIKA-SYNC-INTENT-2\n";bool ok=f.write((const uint8_t*)text,sizeof(text)-1)==sizeof(text)-1;f.flush();ok=ok&&f.size()==sizeof(text)-1;f.close();if(ok)intentArmed=true;return ok;}
@@ -101,9 +101,9 @@ void pikaPhoneSyncChanges(JsonDocument& out,uint32_t since,const String& epoch,b
  JsonArray files=out["files"].to<JsonArray>();for(JsonPairConst pair:catalog["files"].as<JsonObjectConst>()){JsonObjectConst file=pair.value();if(full||uint32_t(file["version"]|0UL)>since){if(full&&(file["deleted"]|false))continue;JsonObject item=files.add<JsonObject>();item.set(file);item["stamp"]=String(catalog["epoch"]|"")+":"+String(file["version"]|0UL);}}
 }
 void pikaPhoneSyncRecord(JsonDocument& ack,const String& kind,const String& id){if(!pikaPhoneSyncTick())return;const String key=kind+":"+id;JsonObjectConst row=catalog["records"][key];if(!row.isNull())ack["change"].set(row);ack["revision"]=managerRevision();}
-void pikaPhoneSyncLease(bool active){if(!active){const bool completed=leaseStarted!=0;leaseAt=leaseStarted=0;if(completed)resetActivity();return;}leaseStarted=millis();leaseAt=leaseStarted;}
+void pikaPhoneSyncLease(bool active){if(!active){const bool completed=leaseStarted!=0;leaseAt=leaseStarted=0;if(completed)resetActivity();return;}leaseStarted=millis();leaseAt=leaseStarted.load();}
 void pikaPhoneSyncProgress(){if(leaseStarted)leaseAt=millis();}
-bool pikaPhoneSyncActive(){return pikaPhoneOnline()&&leaseStarted&&millis()-leaseAt<15000UL&&millis()-leaseStarted<600000UL;}
+bool pikaPhoneSyncActive(){return pikaPhoneOnline()&&leaseStarted&&millis()-leaseAt<15000UL;}
 
 int pikaPhoneCachedMemoryCount(){return loaded&&!dirty.load()&&!fullScanNeeded?int(catalog["meta"]["activeMemories"]|0):-1;}
 

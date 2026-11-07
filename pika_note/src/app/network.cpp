@@ -6,6 +6,7 @@
 #include "data_files.h"
 #include <mbedtls/base64.h>
 #include "phone_link.h"
+#include "phone_lan.h"
 #include "phone_hash.h"
 #include "factory_reset.h"
 #include "mail_text.h"
@@ -2662,12 +2663,14 @@ static void pikaPhoneExchange(JsonVariantConst input,JsonDocument& out){
 
 void pikaPhoneRpcService(){
  String message;uint8_t channel;if(!pikaPhoneTakeRpc(message,channel))return;JsonDocument req(&phoneRpcAllocator);if(deserializeJson(req,message)){pikaPhoneReply(channel,400,"{\"error\":\"Invalid request\"}");return;}
- const String path=req["path"]|"";String body;int code=200;if(String(req["method"]|"GET")=="POST"&&path!="/api/phone/voice-audio")pikaPhoneHashCancel();
+ const String path=req["path"]|"";if(pikaLanOnline())Serial.printf("LAN_RPC path=%s bytes=%u heap=%u\n",path.c_str(),unsigned(message.length()),ESP.getFreeHeap());String body;int code=200;if(String(req["method"]|"GET")=="POST"&&path!="/api/phone/voice-audio")pikaPhoneHashCancel();
  if(path=="/api/phone/settings-export"){body=pikaOwnerExportSettings();if(!body.length()){code=500;body="{\"error\":\"Could not export complete settings\"}";}}
  else if(path=="/api/phone/settings-import"){JsonDocument input;String error;if(deserializeJson(input,req["body"]|"")||!pikaOwnerImportSettings(input.as<JsonVariantConst>(),error)){code=400;JsonDocument out;out["error"]=error.length()?error:"Invalid settings backup";serializeJson(out,body);}else{body="{\"saved\":true,\"restartRequired\":true}";pikaOwnerRestartAt=millis()+1500;}}
  else if(path=="/api/manager/errors"){JsonDocument doc;pikaErrorRead(doc,req["args"]["offset"]|0u,24);serializeJson(doc,body);}
+ else if(path=="/api/phone/lan"){JsonDocument input;if(deserializeJson(input,req["body"]|"")||!pikaLanConfigure(input.as<JsonVariantConst>())){code=409;body="{\"error\":\"Wi-Fi boost unavailable\"}";}else body="{\"accepted\":true}";}
+ else if(path=="/api/phone/transfer-probe"){const char* data=req["body"]|"";size_t count=strlen(data);if(count>32768){code=400;body="{}";}else{uint32_t hash=2166136261u;for(size_t i=0;i<count;i++)hash=(hash^uint8_t(data[i]))*16777619u;JsonDocument doc;doc["bytes"]=count;doc["checksum"]=hash;serializeJson(doc,body);}}
  else if(path=="/api/phone/voice-config"){JsonDocument doc;doc["apiKey"]=pikaOpenAiKey();doc["transcriptionModel"]="gpt-4o-mini-transcribe";serializeJson(doc,body);}
- else if(path=="/api/phone/voice-audio"){JsonDocument input,doc;if(deserializeJson(input,req["body"]|"")){code=400;doc["error"]="Invalid recording request";}else code=pikaPhoneVoiceImport(input.as<JsonVariantConst>(),doc);serializeJson(doc,body);}
+ else if(path=="/api/phone/voice-audio"){JsonDocument input(&phoneRpcAllocator),doc(&phoneRpcAllocator);if(deserializeJson(input,req["body"]|"")){code=400;doc["error"]="Invalid recording request";}else code=pikaPhoneVoiceImport(input.as<JsonVariantConst>(),doc);serializeJson(doc,body);}
  else if(path=="/api/phone/exchange"){JsonDocument input(&phoneRpcAllocator),doc(&phoneRpcAllocator);if(deserializeJson(input,req["body"]|"")){code=400;body="{\"error\":\"Invalid exchange\"}";}else{pikaPhoneExchange(input.as<JsonVariantConst>(),doc);if(doc["error"].is<const char*>())code=500;serializeJson(doc,body);}}
  else if(path=="/api/phone/status"){JsonDocument doc;pikaPhoneSyncStatus(doc);if(doc["error"].is<const char*>())code=500;managerDeviceJson(doc["device"].to<JsonObject>());serializeJson(doc,body);}
  else if(path=="/api/phone/changes"){JsonDocument doc;pikaPhoneSyncChanges(doc,req["args"]["since"]|0UL,req["args"]["epoch"]|"",req["args"]["full"]|false);if(doc["error"].is<const char*>())code=500;managerDeviceJson(doc["device"].to<JsonObject>());serializeJson(doc,body);}
@@ -2679,7 +2682,7 @@ void pikaPhoneRpcService(){
  }else if(path=="/api/phone/hash"){String name=req["args"]["name"]|"",hash;JsonDocument doc;code=pikaPhoneHashRequest(name,hash);if(code==200)doc["sha256"]=hash;else if(code==202)doc["pending"]=true;else doc["error"]="File unavailable or changed";serializeJson(doc,body);
  }else if(path=="/api/phone/read-fast"){
   const String name=req["args"]["name"]|"";const uint32_t offset=req["args"]["offset"]|0UL,expected=req["args"]["size"]|0UL;
-  if(!pikaDataRelativePath(name)){code=400;}else{File f=SD_MMC.open("/notes/"+name);if(!f||f.isDirectory()||offset>f.size()||f.size()!=expected){code=409;}else{const size_t count=std::min<size_t>(8192,expected-offset);auto* bytes=(char*)heap_caps_malloc(std::max<size_t>(1,count),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);if(!bytes){code=503;}else{f.seek(offset);const size_t got=f.read((uint8_t*)bytes,count);if(got!=count)code=500;else body.concat(bytes,got);heap_caps_free(bytes);}}if(f)f.close();}
+  if(!pikaDataRelativePath(name)){code=400;}else{File f=SD_MMC.open("/notes/"+name);if(!f||f.isDirectory()||offset>f.size()||f.size()!=expected){code=409;}else{const size_t count=std::min<size_t>(pikaLanOnline()?32768:8192,expected-offset);auto* bytes=(char*)heap_caps_malloc(std::max<size_t>(1,count),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);if(!bytes){code=503;}else{f.seek(offset);const size_t got=f.read((uint8_t*)bytes,count);if(got!=count)code=500;else body.concat(bytes,got);heap_caps_free(bytes);}}if(f)f.close();}
  }else if(path=="/api/phone/read"){
   const String name=req["args"]["name"]|"";const uint32_t offset=req["args"]["offset"]|0UL;JsonDocument doc;
   if(!pikaDataRelativePath(name)){code=400;doc["error"]="Invalid file path";}else{File f=SD_MMC.open("/notes/"+name);if(!f||f.isDirectory()||offset>f.size()){code=404;doc["error"]="File unavailable";}else{const uint32_t size=f.size();f.seek(offset);auto* memory=(uint8_t*)heap_caps_malloc(4096+5465,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);if(!memory){code=503;doc["error"]="Read buffer unavailable";}else{uint8_t* bytes=memory;char* encoded=(char*)(memory+4096);const size_t got=f.read(bytes,std::min<size_t>(4096,size-offset));size_t n=0;mbedtls_base64_encode((unsigned char*)encoded,5465,&n,bytes,got);encoded[n]=0;doc["data"]=encoded;doc["next"]=offset+got;doc["size"]=size;heap_caps_free(memory);}}if(f)f.close();}serializeJson(doc,body);
@@ -2688,7 +2691,7 @@ void pikaPhoneRpcService(){
   if(previewDeadline&&uint64_t(time(nullptr))*1000ULL>previewDeadline){code=409;body="{\"error\":\"Preview expired; test not played. Try again when Pika is ready\"}";}else{transferServer.dispatch(req,body);code=transferServer.bridgeStatus;}
  }else{code=404;body="{\"error\":\"Unsupported phone operation\"}";}
  JsonDocument previewRequest;const bool soundPreview=path=="/api/manager/settings"&&!deserializeJson(previewRequest,req["body"]|"")&&(String(previewRequest["action"]|"")=="soundTest"||String(previewRequest["action"]|"")=="vibrationTest");
- if(!soundPreview&&(req["method"]|String("GET"))=="POST"&&code<400&&path!="/api/phone/exchange"&&path!="/api/phone/voice-audio"){pikaPhoneChanged();resetActivity();if(path=="/api/manager"){JsonDocument ack,op;if(!deserializeJson(ack,body)&&!deserializeJson(op,req["body"]|"")){pikaPhoneSyncRecord(ack,op["kind"]|"",ack["id"]|"");body="";serializeJson(ack,body);}}}
+ if(!soundPreview&&(req["method"]|String("GET"))=="POST"&&code<400&&path!="/api/phone/exchange"&&path!="/api/phone/voice-audio"&&path!="/api/phone/transfer-probe"&&path!="/api/phone/lan"){pikaPhoneChanged();resetActivity();if(path=="/api/manager"){JsonDocument ack,op;if(!deserializeJson(ack,body)&&!deserializeJson(op,req["body"]|"")){pikaPhoneSyncRecord(ack,op["kind"]|"",ack["id"]|"");body="";serializeJson(ack,body);}}}
  if(code<400&&path!="/api/phone/lease")pikaPhoneSyncProgress();
  if(code>=400){JsonDocument detail;deserializeJson(detail,body);pikaError("companion",path.c_str(),detail["error"]|String("Device request failed"),code);}
  pikaPhoneReply(channel,code,body,req["bulk"]|false);

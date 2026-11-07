@@ -51,3 +51,6 @@ bool pikaVibrationTest(int pattern);
 int pikaSleepMinutes();
 uint32_t pikaSleepIdleMs();
 bool pikaSaveSleepMinutes(int minutes);
+
+float pikaBatteryCalibration();
+bool pikaSaveBatteryCalibration(float factor);

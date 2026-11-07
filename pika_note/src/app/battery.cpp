@@ -1,4 +1,5 @@
 #include "battery.h"
+#include "device_extras.h"
 
 #include "../../config.h"
 #include <algorithm>
@@ -58,9 +59,11 @@ BatteryReading readBattery() {
   else filteredMillivolts = filteredMillivolts * 0.82f + measured * 0.18f;
 
   BatteryReading reading;
-  reading.millivolts = static_cast<uint16_t>(filteredMillivolts + 0.5f);
+  reading.millivolts = static_cast<uint16_t>(filteredMillivolts*pikaBatteryCalibration() + 0.5f);
   reading.percent = percentFromVoltage(reading.millivolts);
   reading.valid = true;
   return reading;
 }
 
+
+bool batteryCalibrateFull(bool reset){if(reset){if(!pikaSaveBatteryCalibration(1.0f))return false;filteredMillivolts=0;return true;}filteredMillivolts=0;BatteryReading sample=readBattery();const float raw=sample.millivolts/pikaBatteryCalibration();if(!sample.valid||raw<3900.0f||raw>4350.0f)return false;if(!pikaSaveBatteryCalibration(4200.0f/raw))return false;filteredMillivolts=0;return true;}

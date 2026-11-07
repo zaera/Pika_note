@@ -314,7 +314,8 @@ String homeDateLabel() {
   else if (language == "cs") label = row.cs; else if (language == "ru") label = row.ru;
   else if (language == "uk") label = row.uk; else if (language == "nl") label = row.nl;
   else if (language == "pt") label = row.pt;
-  return local.substring(8, 10) + " " + label;
+  const int day=local.substring(8,10).toInt();int year=local.substring(0,4).toInt();static const int offsets[]={0,3,2,5,0,3,5,1,4,6,2,4};static const char* days[]={"SUN","MON","TUE","WED","THU","FRI","SAT"};year-=month<3;const int weekday=(year+year/4-year/100+year/400+offsets[month-1]+day)%7;
+  return String(days[weekday])+" "+String(day)+" "+label;
 }
 
 String greetingLabel() {

@@ -11,3 +11,5 @@ struct BatteryReading {
 void batteryBegin();
 BatteryReading readBattery();
 
+
+bool batteryCalibrateFull(bool reset=false);
