@@ -6,6 +6,7 @@ bool pikaLanOnline();
 bool pikaLanConfigured();
 bool pikaLanSend(uint8_t op,uint8_t channel,const uint8_t* data,size_t size);
 void pikaLanStop();
+bool pikaLanStopAndWait(uint32_t timeoutMs);
 void pikaPhoneReceiveLan(const uint8_t* frame,size_t size);
 void pikaPhoneLanLost();
 void pikaPhoneLanTraffic();

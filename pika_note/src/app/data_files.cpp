@@ -19,11 +19,11 @@ bool pikaDataRelativePath(const String& name){
  return true;
 }
 bool pikaDataHash(const String& path,String& hash,uint32_t* size){
- File file=SD_MMC.open(path);if(!file||file.isDirectory()||file.size()>0x7fffffffUL)return false;
+ File file=SD_MMC.open(path);if(!file||file.isDirectory()||file.size()>0x7fffffffUL){Serial.printf("PIKA_HASH_OPEN_FAIL path=%s errno=%d heap=%u\n",path.c_str(),errno,ESP.getFreeHeap());return false;}
  const uint32_t expected=file.size();uint32_t read=0;uint8_t buffer[2048],digest[32];mbedtls_sha256_context sha;mbedtls_sha256_init(&sha);
  bool ok=mbedtls_sha256_starts(&sha,0)==0;
  while(ok&&read<expected){const size_t n=file.readBytes(reinterpret_cast<char*>(buffer),std::min<size_t>(sizeof(buffer),expected-read));if(!n){ok=false;break;}read+=n;ok=mbedtls_sha256_update(&sha,buffer,n)==0;delay(0);}
- if(ok)ok=mbedtls_sha256_finish(&sha,digest)==0;mbedtls_sha256_free(&sha);file.close();if(!ok||read!=expected)return false;
+ if(ok)ok=mbedtls_sha256_finish(&sha,digest)==0;mbedtls_sha256_free(&sha);file.close();if(!ok||read!=expected){Serial.printf("PIKA_HASH_READ_FAIL path=%s read=%lu expected=%lu ok=%d heap=%u\n",path.c_str(),(unsigned long)read,(unsigned long)expected,ok,ESP.getFreeHeap());return false;}
  char hex[65];for(int i=0;i<32;++i)sprintf(hex+i*2,"%02x",digest[i]);hex[64]=0;hash=hex;if(size)*size=expected;return true;
 }
 bool pikaDataParents(const String& path){

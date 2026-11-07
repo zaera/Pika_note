@@ -118,6 +118,8 @@ std::vector<BrainTaskRecord> brainTaskSourcesForNote(int noteNum){std::vector<Br
 return tasks;}
 bool brainApplyTaskOverlays(std::vector<BrainTaskRecord>& tasks){auto states=loadStates();if(!statesReadComplete)return false;std::sort(states.begin(),states.end(),[](const TaskState&a,const TaskState&b){return a.id<b.id;});for(auto& task:tasks){const TaskState* state=findState(states,task.id);if(state){task.done=state->done;task.updatedUtc=state->updatedUtc;}}return managerMergeTasks(tasks);}
 void brainPublishTaskCache(const std::vector<BrainTaskRecord>& tasks){taskReadCache=tasks;taskReadCacheReady=true;}
+void brainPublishTaskCache(std::vector<BrainTaskRecord>&& tasks){taskReadCache=std::move(tasks);taskReadCacheReady=true;}
+const std::vector<BrainTaskRecord>& brainTaskSnapshot(){if(!taskReadCacheReady){auto loaded=loadBrainTasks();}return taskReadCache;}
 std::vector<BrainTaskRecord> loadBrainTasks() {
   if(taskReadCacheReady)return taskReadCache;
   std::vector<BrainTaskRecord> tasks;

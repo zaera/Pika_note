@@ -2,6 +2,7 @@
 #include "device_owner.h"
 #include "phone_sync.h"
 #include "sleep.h"
+#include "device_extras.h"
 #include "phone_link.h"
 #include "phone_lan.h"
 #include "web_pin.h"
@@ -9,6 +10,7 @@
 #include "ui.h"
 #include "home_buttons.h"
 extern bool pikaBackgroundNetworkMode();
+extern uint32_t lastActivityMs;
 #include <NimBLEDevice.h>
 #include <ArduinoJson.h>
 #include <esp_heap_caps.h>
@@ -29,7 +31,7 @@ AuthJob authJob{};std::atomic<bool> authPending{false};String peerIdentity;
 struct VoiceAck{uint8_t channel;uint32_t token,received,epoch;};QueueHandle_t voiceAcks=nullptr;
 struct ReplyJob{uint8_t channel;int code;uint32_t epoch;size_t size;uint8_t* data;bool bulk;};
 bool speechReceiving(){for(const auto& c:channels){const int state=c.state.load();if(c.speechToken.load()!=0&&(state==1||state==2))return true;}return false;}
-bool preemptBackground(){if(pikaBackgroundNetworkMode()&&(pikaHomeButtonsBusy()||rpcReady.load())){interrupted=true;return true;}return false;}
+bool preemptBackground(){if(pikaBackgroundNetworkMode()&&(pikaHomeButtonsBusy()||rpcReady.load()||(!pikaPhoneSyncActive()&&uint32_t(millis()-lastActivityMs)>=pikaSleepIdleMs()))){interrupted=true;return true;}return false;}
 bool finishIndication(bool interruptible){
  const uint32_t started=millis();
  while(indicationPending){
@@ -252,7 +254,7 @@ size_t PhoneSecureClient::write(const uint8_t* bytes,size_t n){
 int PhoneSecureClient::available(){if(preemptBackground()){stop();return 0;}if(channel<0)return 0;auto& c=channels[channel];return c.head.load()-c.tail.load();}
 int PhoneSecureClient::peek(){if(!available())return -1;auto& c=channels[channel];return c.ring[c.tail.load()%ringSize];}
 int PhoneSecureClient::read(){uint8_t b;return read(&b,1)==1?b:-1;}
-int PhoneSecureClient::read(uint8_t* out,size_t n){if(channel<0)return 0;auto& c=channels[channel];const uint32_t tail=c.tail.load();n=std::min<size_t>(n,c.head.load()-tail);const size_t first=std::min<size_t>(n,ringSize-tail%ringSize);if(first)memcpy(out,c.ring+tail%ringSize,first);if(n>first)memcpy(out+first,c.ring,n-first);c.tail.store(tail+n);return n;}
+int PhoneSecureClient::read(uint8_t* out,size_t n){if(preemptBackground()){stop();return 0;}if(channel<0)return 0;auto& c=channels[channel];const uint32_t tail=c.tail.load();n=std::min<size_t>(n,c.head.load()-tail);const size_t first=std::min<size_t>(n,ringSize-tail%ringSize);if(first)memcpy(out,c.ring+tail%ringSize,first);if(n>first)memcpy(out+first,c.ring,n-first);c.tail.store(tail+n);return n;}
 size_t PhoneSecureClient::readBytes(char* out,size_t n){size_t readCount=0;uint32_t last=millis();while(readCount<n&&millis()-last<timeoutMs){const int got=read((uint8_t*)out+readCount,n-readCount);if(got>0){readCount+=got;last=millis();}else if(!connected())break;else delay(1);}return readCount;}
 uint8_t PhoneSecureClient::connected(){if(preemptBackground()){stop();return 0;}return channel>=0&&(available()>0||(online&&channels[channel].state==1));}
 void PhoneSecureClient::stop(){if(channel<0)return;const int old=channel;channel=-1;if(online&&channels[old].state>0){channels[old].state=-3;if(!pikaPhoneSend(5,old+1,nullptr,0))channels[old].state=0;}else channels[old].state=0;}

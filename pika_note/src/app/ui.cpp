@@ -395,7 +395,7 @@ void showIdle(int pendingCount, int batteryPercent) {
   const String nowUtc = currentUtcIso();
   const String localNow = utcToLocalDeviceLabel(nowUtc);
   const String todayKey = localNow.length() >= 10 && localNow != "time not set" ? localNow.substring(0, 10) : "";
-  const std::vector<BrainTaskRecord> tasks = loadBrainTasks();
+  const auto& tasks = brainTaskSnapshot();
   int memoryCount = pikaPhoneCachedMemoryCount();
   if(memoryCount<0){memoryCount=0;for(const NoteEntry& note:noteIndex)if(!managerArchived(note.num))++memoryCount;}
   int taskCount = 0, eventCount = 0, upcomingEventCount = 0;
@@ -696,13 +696,23 @@ RTC_NOINIT_ATTR time_t sleepHomeTime;
 uint32_t homePixelsHash(const uint8_t* bytes){uint32_t h=2166136261UL;for(size_t i=0;i<sizeof(sleepHomePixels);i++)h=(h^bytes[i])*16777619UL;return h;}
 void rememberHomePixels(){sleepHomeMagic=0;memcpy(sleepHomePixels,display->getBuffer(),sizeof(sleepHomePixels));sleepHomeHash=homePixelsHash(sleepHomePixels);sleepHomeTime=time(nullptr);sleepHomeMagic=0x50484f4d;}
 }
-void showSleepLocked() {
+bool showSleepLocked() {
   pikaWaitHomeRefresh();
-  // Retain the normal Today frame across deep sleep, then leave an unmistakable
-  // inverted image on the unpowered panel. No extra lock icon is necessary.
-  rememberHomePixels();
-  uint8_t* pixels=display->getBuffer();for(size_t i=0;i<sizeof(sleepHomePixels);i++)pixels[i]=~pixels[i];refresh();
+  // Always derive sleep from the normal retained Today, never toggle whatever
+  // frame happens to be in RAM. Repeated sleep/reboot attempts stay dark.
+  if(sleepHomeMagic!=0x50484f4d||homePixelsHash(sleepHomePixels)!=sleepHomeHash)rememberHomePixels();
+  uint8_t* pixels=display->getBuffer();
+  for(size_t i=0;i<sizeof(sleepHomePixels);i++)pixels[i]=~sleepHomePixels[i];
+  unsigned white=0;for(size_t i=0;i<sizeof(sleepHomePixels);i++)white+=__builtin_popcount(pixels[i]);Serial.printf("PIKA_SLEEP_PIXELS white=%u black=%u\n",white,unsigned(sizeof(sleepHomePixels)*8-white));
+  for(unsigned attempt=0;attempt<2;attempt++){
+    const bool confirmed=refreshSleep();
+    Serial.printf("PIKA_SLEEP_FRAME attempt=%u confirmed=%d\n",attempt+1,confirmed);
+    if(confirmed)return true;
+  }
+  pikaError("sleep","display_frame","Sleep postponed: final display update failed");
+  return false;
 }
+
 bool showCachedWakeHome(bool afterUsbRestart){
   if((!afterUsbRestart&&esp_sleep_get_wakeup_cause()!=ESP_SLEEP_WAKEUP_EXT1)||sleepHomeMagic!=0x50484f4d||homePixelsHash(sleepHomePixels)!=sleepHomeHash)return false;
   memcpy(display->getBuffer(),sleepHomePixels,sizeof(sleepHomePixels));refreshHomeAsync();return true;

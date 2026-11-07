@@ -32,3 +32,5 @@ bool brainTaskReadComplete();
 std::vector<BrainTaskRecord> brainTaskSourcesForNote(int noteNum);
 bool brainApplyTaskOverlays(std::vector<BrainTaskRecord>& tasks);
 void brainPublishTaskCache(const std::vector<BrainTaskRecord>& tasks);
+void brainPublishTaskCache(std::vector<BrainTaskRecord>&& tasks);
+const std::vector<BrainTaskRecord>& brainTaskSnapshot();

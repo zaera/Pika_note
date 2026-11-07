@@ -319,6 +319,19 @@ void epaper_driver_display::EPD_Clear()
     memset(buffer, 0xff, buffer_len);
 }
 
+// The final frame must finish before the panel power rail is removed. Leave
+// the controller in full-update mode; it will be initialized again after wake.
+bool epaper_driver_display::EPD_DisplaySleepFrame()
+{
+    EPD_Init();
+    EPD_DisplayPartBaseImage();
+    // BUSY can assert shortly after the activation command. Sample again after
+    // that edge rather than treating an initially idle pin as completion.
+    vTaskDelay(pdMS_TO_TICKS(50));
+    read_busy();
+    return !busyTimedOut;
+}
+
 void epaper_driver_display::EPD_Display()
 {
     int buffer_len = lcd_spi_data.buffer_len;

@@ -186,6 +186,14 @@ void refreshFast() {
 // Rebuild both controller image planes with the full waveform. Use this only
 // for long-lived screens where ghost-free reading matters more than the extra
 // refresh time; interactions continue to use the fast partial waveform.
+bool refreshSleep() {
+  pikaWaitHomeRefresh();
+  const bool confirmed=display->EPD_DisplaySleepFrame();
+  epaperBaseReady=false; // A cancelled sleep must rebuild the partial waveform.
+  epaperPartialRefreshes=0;
+  return confirmed;
+}
+
 void refreshClean() {
   display->EPD_Init();
   display->EPD_DisplayPartBaseImage();

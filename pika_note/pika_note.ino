@@ -1133,6 +1133,7 @@ void traceHomeWork(const char* name,void(*work)()){
  if(elapsed>=100)Serial.printf("PIKA_HOME_WORK name=%s ms=%lu\n",name,(unsigned long)elapsed);
 }
 void loop() {
+  if(usbKeepAwakeUntil&&(digitalRead(BTN_REC)==LOW||digitalRead(BTN_PWR)==LOW)){usbKeepAwakeUntil=0;Serial.println("PIKA_TEST_HOLD_RELEASED_BY_BUTTON");}
   if(usbKeepAwakeUntil&&int32_t(usbKeepAwakeUntil-millis())>0)resetActivity();
   if(pikaRecoveryRestartRequested()){pikaHomeButtonsEnable(false);pikaPhoneForeground(true);showRebooting();delay(1000);showRebootSleep();delay(350);pikaRecoveryMarkResume();ESP.restart();return;}
   pikaRtcServicePhoneTime();
@@ -1292,16 +1293,9 @@ void loop() {
         (!lastLowerTapAt || millis() - lastLowerTapAt > ASK_DOUBLE_TAP_MS)) {
       const uint32_t idleFor = millis() - lastActivityMs;
       if (idleFor >= pikaSleepIdleMs()) {
-        // Give queued memories time to finish, but never let a bad network or
-        // failed cloud request keep the device awake indefinitely.
-        // This scans SD metadata. Never repeat it on every 8 ms idle tick.
-        static uint32_t nextQueueCheck = 0;
-        static bool workPending = false;
-        if (!nextQueueCheck || static_cast<int32_t>(millis() - nextQueueCheck) >= 0) {
-          workPending = pikaPhoneOnline() && pikaHasOpenAiKey() && pendingBrainMemoryCount() > 0;
-          nextQueueCheck = millis() + 1000UL;
-        }
-        if (!workPending || idleFor >= min(pikaSleepIdleMs()+120000UL,300000UL)) enterUltraSleep();
+        // Pending derived work stays queued. Only an active data-transfer
+        // lease may postpone the configured inactivity deadline.
+        enterUltraSleep();
       }
     }
   }

@@ -31,7 +31,7 @@ bool normalFile(const String& name){return pikaPhoneNormalFile(name);}
 bool armIntent(){if(intentArmed)return true;if(SD_MMC.exists(intentPath)){intentArmed=true;return true;}File f=SD_MMC.open(intentPath,FILE_WRITE);if(!f)return false;const char text[]="PIKA-SYNC-INTENT-2\n";bool ok=f.write((const uint8_t*)text,sizeof(text)-1)==sizeof(text)-1;f.flush();ok=ok&&f.size()==sizeof(text)-1;f.close();if(ok)intentArmed=true;return ok;}
 int noteNumber(const String& name){if(!name.startsWith("note_"))return 0;int dot=name.indexOf('.');if(dot<6)return 0;for(int i=5;i<dot;i++)if(!isdigit(name[i]))return 0;String ext=name.substring(dot+1);if(ext!="txt"&&ext!="meta"&&ext!="brain.json"&&ext!="archived"&&ext!="manual"&&ext!="wav")return 0;return name.substring(5,dot).toInt();}
 void sourceJson(JsonObject out,const BrainTaskRecord& t){out["id"]=t.id;out["noteNum"]=t.noteNum;out["text"]=t.text;out["createdUtc"]=t.createdUtc;out["dueUtc"]=t.dueUtc;out["endUtc"]=t.endUtc;out["priority"]=t.priority;out["type"]=t.type;out["datePrecision"]=t.datePrecision;}
-BrainTaskRecord sourceTask(JsonObjectConst o){BrainTaskRecord t;t.id=o["id"]|"";t.noteNum=o["noteNum"]|-1;t.text=o["text"]|"";t.createdUtc=o["createdUtc"]|"";t.dueUtc=o["dueUtc"]|"";t.endUtc=o["endUtc"]|"";t.priority=o["priority"]|1;t.type=o["type"]|"todo";t.datePrecision=o["datePrecision"]|"none";return t;}
+BrainTaskRecord sourceTask(JsonObjectConst o){BrainTaskRecord t;for(String* field:{&t.id,&t.text,&t.createdUtc,&t.dueUtc,&t.endUtc,&t.updatedUtc})field->reserve(512);t.id=o["id"]|"";t.noteNum=o["noteNum"]|-1;t.text=o["text"]|"";t.createdUtc=o["createdUtc"]|"";t.dueUtc=o["dueUtc"]|"";t.endUtc=o["endUtc"]|"";t.priority=o["priority"]|1;t.type=o["type"]|"todo";t.datePrecision=o["datePrecision"]|"none";return t;}
 void putRecord(JsonObject rows,const String& kind,JsonObjectConst record,uint32_t generation,bool& changed){const String id=record["id"]|"",key=kind+":"+id,hash=digest(record);JsonObject row=rows[key];if(row.isNull()||(row["deleted"]|false)||String(row["hash"]|"")!=hash){row=rows[key].to<JsonObject>();row["kind"]=kind;row["id"]=id;row["hash"]=hash;row["version"]=generation;row["record"].set(record);row.remove("deleted");changed=true;}}
 void tombstone(JsonObject row,uint32_t generation,bool& changed){if(!row.isNull()&&!(row["deleted"]|false)){row.remove("record");row.remove("hash");row["deleted"]=true;row["version"]=generation;changed=true;}}
 void memoryCounts(JsonDocument& meta,JsonObjectConst rows){meta["memoryDays"].to<JsonObject>();meta["archivedMemoryDays"].to<JsonObject>();unsigned count=0,active=0;for(JsonPairConst p:rows){JsonObjectConst row=p.value();if(String(row["kind"]|"")!="memories"||(row["deleted"]|false))continue;count++;JsonObjectConst m=row["record"];bool archived=m["archived"]|false;if(!archived)active++;String date=m["date"]|"";if(date.length()>=10){JsonObject days=meta[archived?"archivedMemoryDays":"memoryDays"];String day=date.substring(0,10);days[day]=(days[day]|0)+1;}}meta["totalMemories"]=count;meta["activeMemories"]=active;}
@@ -54,6 +54,7 @@ bool pikaPhoneSyncTick(){
  if(!dirty.exchange(false))return true;
  const bool full=fullScanNeeded;
  if(full)loadIndex(true);
+ String indexHash;if(!pikaDataHash(INDEX_FILE,indexHash))return fail("index_read_failed");
  std::lock_guard<std::mutex> lock(touchedMutex);
  // This marker precedes all canonical file commits. Only clear it after the
  // new checksummed catalog is durably replaced; a crash forces reconciliation.
@@ -74,7 +75,12 @@ bool pikaPhoneSyncTick(){
  // No SD reads per task: sources come from the persisted catalog. Read just
  // the small completion and manager overlays once for the entire transaction.
  std::vector<BrainTaskRecord> tasks;for(JsonPair pair:sources)for(JsonObjectConst item:pair.value().as<JsonArrayConst>())tasks.push_back(sourceTask(item));
- if(!brainApplyTaskOverlays(tasks))return fail("task_overlay_failed");std::set<String> taskKeys;
+ if(!brainApplyTaskOverlays(tasks))return fail("task_overlay_failed");
+ // Short task strings otherwise consume scarce internal RAM a second time.
+ // Existing large strings are already external; reserve moves short strings
+ // to PSRAM before SD opens, JSON commits and other radio tasks need RAM.
+ for(auto& task:tasks)for(String* field:{&task.id,&task.text,&task.createdUtc,&task.dueUtc,&task.endUtc,&task.updatedUtc})if(field->length()&&!field->reserve(512))return fail("task_allocation_failed");
+ std::set<String> taskKeys;
  for(const auto& task:tasks){JsonDocument record(&allocator);pikaPhoneBuildTaskRecord(record.to<JsonObject>(),task);if(record.overflowed())return fail("task_allocation_failed");String kind=task.type=="event"?"events":"tasks";taskKeys.insert(kind+":"+task.id);putRecord(rows,kind,record.as<JsonObjectConst>(),generation,changed);}
  for(JsonPair pair:rows){JsonObject row=pair.value();String kind=row["kind"]|"";if((kind=="tasks"||kind=="events")&&!taskKeys.count(String(pair.key().c_str())))tombstone(row,generation,changed);}
  JsonDocument meta(&allocator);pikaPhoneBuildMeta(meta);memoryCounts(meta,rows);JsonDocument stable(&allocator);if(meta.overflowed()||!stable.set(meta))return fail("metadata_allocation_failed");stable["settings"].remove("googleStatus");stable["settings"].remove("mailStatus");for(JsonObject n:stable["settings"]["networks"].as<JsonArray>())n.remove("connected");
@@ -83,13 +89,13 @@ bool pikaPhoneSyncTick(){
  if(full){if(!pikaDataList("/notes",files,error,false,true))return fail("file_list_failed");}
  else for(const auto& name:touched){if(!normalFile(name))continue;File file=SD_MMC.open("/notes/"+name);if(!file){if(SD_MMC.exists("/notes/"+name))return fail("file_stat_failed");continue;}if(!file.isDirectory()){PikaDataFile item;item.name=name;item.size=file.size();item.modified=file.getLastWrite();files.push_back(std::move(item));}file.close();}
  changed=pikaUpdatePhoneInventory(next["files"].as<JsonObject>(),files,touched,full,generation)||changed;
- next["schema"]=schema;String indexHash;if(!pikaDataHash(INDEX_FILE,indexHash))return fail("index_read_failed");if(String(next["indexHash"]|"")!=indexHash){next["indexHash"]=indexHash;changed=true;}if(full||!notes.empty())changed=true;
+ next["schema"]=schema;if(String(next["indexHash"]|"")!=indexHash){next["indexHash"]=indexHash;changed=true;}if(full||!notes.empty())changed=true;
  if(changed){next["generation"]=generation;if(next.overflowed())return fail("catalog_allocation_failed");String checksum=digest(next.as<JsonVariantConst>());if(checksum.length()!=64)return fail("checksum_failed");next["checksum"]=checksum;if(pikaHomeButtonsBusy())return fail("input_pending");if(!pikaDataWriteJson(path,next,true))return fail("catalog_commit_failed");if(!catalog.set(next))return fail("catalog_publish_failed");}
  // Publish caches only after a complete durable commit. A failed transaction
  // retains the previous generation; retries cannot erase untouched records.
- brainPublishTaskCache(tasks);touched.clear();fullScanNeeded=false;lastFailure="";
+ const size_t taskCount=tasks.size();brainPublishTaskCache(std::move(tasks));touched.clear();fullScanNeeded=false;lastFailure="";
  if(!dirty.load()){if(!SD_MMC.remove(intentPath)&&SD_MMC.exists(intentPath))return fail("intent_clear_failed");intentArmed=false;}
- Serial.printf("PIKA_CATALOG_UPDATE full=%d notes=%u task_sources=%u files=%u changed=%d ms=%lu\n",full,unsigned(notes.size()),unsigned(tasks.size()),unsigned(files.size()),changed,(unsigned long)(millis()-started));return true;
+ Serial.printf("PIKA_CATALOG_UPDATE full=%d notes=%u task_sources=%u files=%u changed=%d ms=%lu\n",full,unsigned(notes.size()),unsigned(taskCount),unsigned(files.size()),changed,(unsigned long)(millis()-started));return true;
 }
 bool pikaPhoneCatalogSnapshot(JsonDocument& out){if(!pikaPhoneSyncTick())return false;out.set(catalog["meta"]);for(const char* kind:{"memories","tasks","events"})out[kind].to<JsonArray>();for(JsonPairConst pair:catalog["records"].as<JsonObjectConst>()){JsonObjectConst row=pair.value();if(row["deleted"]|false)continue;String kind=row["kind"]|"";if(kind=="memories"||kind=="tasks"||kind=="events")out[kind].as<JsonArray>().add(row["record"]);}out["revision"]=managerRevision();return !out.overflowed();}
 void pikaPhoneSyncStatus(JsonDocument& out){if(!pikaPhoneSyncTick()){out["error"]=lastFailure.length()?lastFailure:String("Cannot read durable change journal");return;}out["protocol"]=4;out["epoch"]=catalog["epoch"];out["generation"]=catalog["generation"];out["revision"]=managerRevision();}
@@ -101,7 +107,7 @@ void pikaPhoneSyncChanges(JsonDocument& out,uint32_t since,const String& epoch,b
  JsonArray files=out["files"].to<JsonArray>();for(JsonPairConst pair:catalog["files"].as<JsonObjectConst>()){JsonObjectConst file=pair.value();if(full||uint32_t(file["version"]|0UL)>since){if(full&&(file["deleted"]|false))continue;JsonObject item=files.add<JsonObject>();item.set(file);item["stamp"]=String(catalog["epoch"]|"")+":"+String(file["version"]|0UL);}}
 }
 void pikaPhoneSyncRecord(JsonDocument& ack,const String& kind,const String& id){if(!pikaPhoneSyncTick())return;const String key=kind+":"+id;JsonObjectConst row=catalog["records"][key];if(!row.isNull())ack["change"].set(row);ack["revision"]=managerRevision();}
-void pikaPhoneSyncLease(bool active){if(!active){const bool completed=leaseStarted!=0;leaseAt=leaseStarted=0;if(completed)resetActivity();return;}leaseStarted=millis();leaseAt=leaseStarted.load();}
+void pikaPhoneSyncLease(bool active){if(!active){leaseAt=leaseStarted=0;return;}leaseStarted=millis();leaseAt=leaseStarted.load();}
 void pikaPhoneSyncProgress(){if(leaseStarted)leaseAt=millis();}
 bool pikaPhoneSyncActive(){return pikaPhoneOnline()&&leaseStarted&&millis()-leaseAt<15000UL;}
 

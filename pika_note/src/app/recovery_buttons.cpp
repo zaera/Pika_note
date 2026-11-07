@@ -9,13 +9,13 @@ namespace {
 std::atomic<uint32_t> restartAt{0};
 RTC_NOINIT_ATTR uint32_t resumeMagic,resumeCheck;
 // Independent recovery input: no display, BLE, SD, or application-loop locks.
-// Wait for BOOT/upper release before reset so the chord cannot select ROM mode.
+// Software restart is requested at the deadline even while both keys stay down.
 void recoveryButtonsTask(void*) {
   PikaRecoveryHold hold;
   for (;;) {
     if(!restartAt&&hold.update(millis(),digitalRead(BTN_REC)==LOW,digitalRead(BTN_PWR)==LOW))restartAt=millis();
     // Recovery still works if the UI/main loop is stuck and cannot draw.
-    if(restartAt&&uint32_t(millis()-restartAt.load())>8000)esp_restart();
+    if(restartAt&&uint32_t(millis()-restartAt.load())>2500){pikaRecoveryMarkResume();esp_restart();}
     vTaskDelay(pdMS_TO_TICKS(10));
   }
 }

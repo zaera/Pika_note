@@ -49,6 +49,7 @@ std::map<int,std::string> memoryText;std::map<int,std::vector<BrainTaskRecord>> 
 bool brainApplyTaskOverlays(std::vector<BrainTaskRecord>& tasks){if(overlayFail)return false;for(auto&t:tasks)if(completions.count(t.id.c_str()))t.done=completions[t.id.c_str()];return true;}
 std::vector<BrainTaskRecord> brainTaskSourcesForNote(int n){sourceReads++;return rawSources[n];}
 void brainPublishTaskCache(const std::vector<BrainTaskRecord>&){published++;}
+void brainPublishTaskCache(std::vector<BrainTaskRecord>&&){published++;}
 bool pikaPhoneBuildMemoryRecord(JsonObject o,int n){memoryReads++;if(memoryFail||!managerNoteExists(n))return false;o["id"]="m"+String(n);o["text"]=memoryText[n];o["date"]="2026-11-02";o["archived"]=false;return true;}
 void pikaPhoneBuildTaskRecord(JsonObject o,const BrainTaskRecord&t){o["id"]=t.id;o["text"]=t.text;o["done"]=t.done;}
 void pikaPhoneBuildMeta(JsonDocument&o){o["revision"]=revision;o["settings"]["voice"]="cedar";}

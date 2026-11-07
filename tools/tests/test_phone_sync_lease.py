@@ -10,7 +10,7 @@ uint32_t now=100;int resets=0;bool online=true;
 std::atomic<uint32_t> leaseAt{0},leaseStarted{0};
 uint32_t millis(){return now;}void resetActivity(){resets++;}bool pikaPhoneOnline(){return online;}
 """+functions+"""
-int main(){assert(!pikaPhoneSyncActive());pikaPhoneSyncLease(true);assert(pikaPhoneSyncActive());for(int i=0;i<100;i++){now+=10000;pikaPhoneSyncProgress();assert(pikaPhoneSyncActive());}now+=15001;assert(!pikaPhoneSyncActive());pikaPhoneSyncLease(true);online=false;assert(!pikaPhoneSyncActive());online=true;pikaPhoneSyncLease(false);assert(!pikaPhoneSyncActive()&&resets==1);now=0xfffffff0;pikaPhoneSyncLease(true);now=32;assert(pikaPhoneSyncActive());}
+int main(){assert(!pikaPhoneSyncActive());pikaPhoneSyncLease(true);assert(pikaPhoneSyncActive());for(int i=0;i<100;i++){now+=10000;pikaPhoneSyncProgress();assert(pikaPhoneSyncActive());}now+=15001;assert(!pikaPhoneSyncActive());pikaPhoneSyncLease(true);online=false;assert(!pikaPhoneSyncActive());online=true;pikaPhoneSyncLease(false);assert(!pikaPhoneSyncActive()&&resets==0);now=0xfffffff0;pikaPhoneSyncLease(true);now=32;assert(pikaPhoneSyncActive());}
 """
 with tempfile.TemporaryDirectory() as d:
  p=Path(d);(p/'test.cpp').write_text(source);exe=p/'lease.exe'

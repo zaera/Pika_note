@@ -60,3 +60,4 @@ bool pikaLanSend(uint8_t op,uint8_t channel,const uint8_t* data,size_t size){
  do{size_t n=std::min<size_t>(4000,size-at);uint8_t* frame=txFrame;frame[0]=op|((at+n==size)?128:0);frame[1]=channel;frame[2]=frame[3]=0;frame[4]=n;frame[5]=n>>8;if(n)memcpy(frame+6,data+at,n);if(!writeRecord(frame,n+6)){ready=false;socket.stop();return false;}at+=n;}while(at<size);return true;
 }
 void pikaLanStop(){stop=true;ready=false;}
+bool pikaLanStopAndWait(uint32_t timeoutMs){pikaLanStop();const uint32_t at=millis();while(running&&millis()-at<timeoutMs)delay(2);return !running;}

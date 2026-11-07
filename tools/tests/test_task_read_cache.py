@@ -22,6 +22,7 @@ main=r'''int main(){memory.tasks={"Original"};memory.taskIds={"first"};managerFa
 for(int i=0;i<30;i++){auto rows=loadBrainTasks();assert(rows.size()==1);rows[0].text="local copy";}assert(stateReads==1&&memoryReads==1&&managerReads==1);
 memory.tasks[0]="Edited";states.push_back({"first",true,"now",""});BrainTaskRecord added;added.id="manual";added.text="New";manual.push_back(added);invalidateBrainTaskCache();auto fresh=loadBrainTasks();assert(fresh.size()==2&&fresh[0].text=="Edited"&&fresh[0].done&&fresh[1].id=="manual");assert(stateReads==2&&memoryReads==2&&managerReads==2);
 managerFails=true;invalidateBrainTaskCache();auto safe=loadBrainTasks();assert(!brainTaskReadComplete()&&safe.size()==2&&safe[0].done&&safe[1].id=="manual");memory.tasks[0]="Changed while failed";auto again=loadBrainTasks();assert(!brainTaskReadComplete()&&again[0].text=="Edited");managerFails=false;auto recovered=loadBrainTasks();assert(brainTaskReadComplete()&&recovered[0].text=="Changed while failed"&&recovered[0].done&&recovered[1].id=="manual");
+auto owned=loadBrainTasks();auto* address=owned.data();brainPublishTaskCache(std::move(owned));assert(brainTaskSnapshot().data()==address);
 puts("Production task cache: 30 repeated reads avoid SD, explicit invalidation refreshes text/status/manual rows, copies independent; failed overlay never publishes base-only tasks and retries recover: PASS");}
 '''
 with tempfile.TemporaryDirectory() as directory:

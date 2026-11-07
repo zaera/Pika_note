@@ -32,6 +32,7 @@ void refreshHomeAsync();
 void refresh();
 void refreshFast();
 void refreshClean();
+bool refreshSleep();
 
 void drawBigDigit(int x, int y, int w, int h, char d, uint8_t c);
 int  bigStrW(int h, const char* s);

@@ -2,6 +2,7 @@
 #include "home_buttons.h"
 #include "phone_sync.h"
 #include "phone_link.h"
+#include "phone_lan.h"
 #include "phone_hash.h"
 #include "activity_led.h"
 #include "Arduino.h"
@@ -62,14 +63,18 @@ void enterUltraSleep() {
     resetActivity();
     return;
   }
+  // Join the LAN worker before any final display/SD/power teardown. It owns
+  // socket and crypto buffers and must not race WiFi shutdown or a sleep frame.
+  if(!pikaLanStopAndWait(1200)){Serial.println("PIKA_SLEEP_DEFER lan_shutdown");resetActivity();return;}
+  pikaPhoneForeground(true);
   // Preserve Today as white text on black while asleep. The ordinary frame
   // is retained in RTC memory for early restoration on the next key wake.
-  if(!pikaClockMode())showSleepLocked();
+  if(!pikaClockMode()&&!showSleepLocked()){pikaPhoneForeground(false);resetActivity();showIdle(pendingBrainMemoryCount(),readBattery().percent);return;}
   pikaPlayNotify(6);
   pikaVibrationWait();
   // A press during the panel refresh must still cancel sleep safely.
   if (digitalRead(BTN_PWR) == LOW || sleepLowerEdge) {
-    pikaHomeButtonsReset();resetActivity();
+    Serial.printf("PIKA_SLEEP_CANCEL edge=%d lower=%d\n",sleepLowerEdge,digitalRead(BTN_PWR));pikaPhoneForeground(false);pikaHomeButtonsReset();resetActivity();
     showIdle(pendingBrainMemoryCount(), readBattery().percent);
     return;
   }

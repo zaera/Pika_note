@@ -1,0 +1,9 @@
+package me.pikanote.companion;
+import android.app.*;import android.content.*;import org.json.*;
+final class LibraryLiveChecks{
+ static JSONObject run(Instrumentation i)throws Exception{
+  Context c=i.getTargetContext();c.startForegroundService(new Intent(c,PikaService.class));LanLiveChecks.await(()->PikaService.instance!=null&&PikaService.instance.ble!=null,5);PikaService s=PikaService.instance;s.maintenance=true;
+  try{LanLiveChecks.await(()->s.ble.online&&!s.syncing,40);Store store=Store.get(c);JSONObject phone=store.snapshot();BleTransport.Reply raw=s.ble.rpc("/api/manager","GET",null,null);if(raw.status!=200)throw new java.io.IOException("Device snapshot HTTP "+raw.status+": "+raw.json().optString("error"));JSONObject device=raw.json();JSONObject out=new JSONObject();for(String kind:new String[]{"memories","tasks","events"}){JSONArray a=phone.optJSONArray(kind),b=device.optJSONArray(kind);JSONArray pa=new JSONArray(),pb=new JSONArray();if(a!=null)for(int n=0;n<a.length();n++){JSONObject r=a.getJSONObject(n);if(!r.optBoolean("archived")&&!r.optBoolean("done"))pa.put(r.optString("id"));}if(b!=null)for(int n=0;n<b.length();n++){JSONObject r=b.getJSONObject(n);if(!r.optBoolean("archived")&&!r.optBoolean("done"))pb.put(r.optString("id"));}out.put(kind,new JSONObject().put("phone",pa).put("device",pb));}out.put("deviceCounters",device.optJSONObject("device"));JSONArray jobs=new JSONArray();synchronized(store){JSONArray j=PhoneVoice.jobs(store);for(int n=0;n<j.length();n++){JSONObject row=j.getJSONObject(n);jobs.put(new JSONObject().put("id",store.id(row.optString("localId"))).put("status",row.optString("status")).put("retryAt",row.optLong("retryAt")).put("attempts",row.optInt("uploadAttempts")));}}out.put("voice",jobs);return out;
+  }finally{s.maintenance=false;s.manualSync();}
+ }
+}

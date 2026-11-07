@@ -2662,7 +2662,7 @@ static void pikaPhoneExchange(JsonVariantConst input,JsonDocument& out){
 }
 
 void pikaPhoneRpcService(){
- String message;uint8_t channel;if(!pikaPhoneTakeRpc(message,channel))return;JsonDocument req(&phoneRpcAllocator);if(deserializeJson(req,message)){pikaPhoneReply(channel,400,"{\"error\":\"Invalid request\"}");return;}
+ String message;uint8_t channel;if(!pikaPhoneTakeRpc(message,channel))return;JsonDocument req(&phoneRpcAllocator);if(auto error=deserializeJson(req,message)){Serial.printf("PIKA_RPC_PARSE error=%s bytes=%u heap=%u\n",error.c_str(),unsigned(message.length()),ESP.getFreeHeap());pikaPhoneReply(channel,400,"{\"error\":\"Invalid request\"}");return;}
  const String path=req["path"]|"";if(pikaLanOnline())Serial.printf("LAN_RPC path=%s bytes=%u heap=%u\n",path.c_str(),unsigned(message.length()),ESP.getFreeHeap());String body;int code=200;if(String(req["method"]|"GET")=="POST"&&path!="/api/phone/voice-audio")pikaPhoneHashCancel();
  if(path=="/api/phone/settings-export"){body=pikaOwnerExportSettings();if(!body.length()){code=500;body="{\"error\":\"Could not export complete settings\"}";}}
  else if(path=="/api/phone/settings-import"){JsonDocument input;String error;if(deserializeJson(input,req["body"]|"")||!pikaOwnerImportSettings(input.as<JsonVariantConst>(),error)){code=400;JsonDocument out;out["error"]=error.length()?error:"Invalid settings backup";serializeJson(out,body);}else{body="{\"saved\":true,\"restartRequired\":true}";pikaOwnerRestartAt=millis()+1500;}}

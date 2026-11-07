@@ -60,6 +60,7 @@ public:
 
     void EPD_Init();    /* 墨水屏初始化 */
     void EPD_Clear();   /* 清空屏幕 */
+    bool EPD_DisplaySleepFrame();
     void EPD_Display(); /* 刷buffer到墨水屏 */
 
     /*局部刷新*/

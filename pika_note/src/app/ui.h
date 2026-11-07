@@ -25,7 +25,7 @@ void showTransferMode(const char* ip, const char* apPassword = nullptr);
 void showVolumeSetting(int percent);
 void showSetupRequired();
 void showError(const char* message);
-void showSleepLocked();
+bool showSleepLocked();
 void showUltraSleepScreen();
 
 void showClockScreen();
