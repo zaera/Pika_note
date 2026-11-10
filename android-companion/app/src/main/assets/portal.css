@@ -33,3 +33,13 @@ html .field input[type="range"]{display:block;width:100%;min-width:0;max-width:1
 
 /* Icon-only Archive action must not inherit text-button horizontal padding. */
 button.btn.archive-trash{width:48px;height:48px;min-width:48px;padding:0;flex:0 0 48px}button.btn.archive-trash>svg{display:block;width:26px;height:26px;flex:0 0 26px}
+
+.pika-render{isolation:isolate}.pika-sync-bubbles{position:absolute;top:-10%;left:-40%;width:180%;height:120%;z-index:-1;pointer-events:none}@media(prefers-reduced-motion:reduce){.pika-sync-bubbles{display:none}}
+
+/* Separate silhouette shadow: particles paint above it, below the device. */
+.pika-render::before{content:"";position:absolute;inset:-32px;background:url('/pika-case.svg') center calc(50% + 7px)/calc(100% - 64px) calc(100% - 64px) no-repeat;filter:brightness(0) blur(12px);mask-image:linear-gradient(#fff,#fff),url('/pika-case.svg');mask-size:100% 100%,calc(100% - 64px) calc(100% - 64px);mask-position:center;mask-repeat:no-repeat;mask-composite:exclude;opacity:.30;z-index:-2;pointer-events:none}
+[data-theme="dark"] .pika-render::before{display:none}
+
+/* The sleeping LCD must not blend with the page theme through body opacity. */
+[data-pika-connected="false"] .pika-render::after{content:"";position:absolute;inset:0;background:url('/pika-sleep-screen.svg') center/100% 100% no-repeat;z-index:0;pointer-events:none}
+[data-pika-connected="false"] .pika-device-screen.stats{opacity:1;z-index:1}

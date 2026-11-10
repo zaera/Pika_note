@@ -11,7 +11,7 @@
 #include <mutex>
 
 namespace {
-struct Offer{String ssid,password;IPAddress host;uint16_t port=0;uint8_t key[32]{};};
+struct Offer{String ssid,password;IPAddress host;uint16_t port=0;bool ssidProof=false;uint8_t key[32]{};};
 Offer offer;std::mutex settingsMutex,wireMutex,cryptoMutex;std::atomic<bool> configured{false},ready{false},running{false},stop{false};
 NetworkClient socket;mbedtls_gcm_context encryptCtx,decryptCtx;uint8_t sessionKey[32];uint64_t sent=0,received=0;
 uint8_t *txFrame=nullptr,*txWire=nullptr,*rxWire=nullptr;
@@ -43,7 +43,8 @@ void worker(void*){
     phase=3;
     // BLE remains the control channel. Never move an in-flight stream to TCP.
     uint32_t wait=millis();while((pikaPhoneBusy()||pikaPhoneForegroundActive())&&!stop&&millis()-wait<3000)delay(5);
-    if(!pikaPhoneBusy()&&!pikaPhoneForegroundActive()&&!stop&&writeRecord((const uint8_t*)"READY",5)){ready=true;authenticated=true;Serial.printf("PIKA_LAN_READY join_ms=%lu rssi=%d\n",(unsigned long)(millis()-started),int(WiFi.RSSI()));}
+    String proof=current.ssidProof?String("READY:")+WiFi.SSID():String("READY");
+    if(!pikaPhoneBusy()&&!pikaPhoneForegroundActive()&&!stop&&writeRecord((const uint8_t*)proof.c_str(),proof.length())){ready=true;authenticated=true;Serial.printf("PIKA_LAN_READY join_ms=%lu rssi=%d\n",(unsigned long)(millis()-started),int(WiFi.RSSI()));}
    }
   }
  }
@@ -57,7 +58,7 @@ void worker(void*){
 }
 }
 bool pikaLanConfigure(JsonVariantConst input){
- if(running)return false;Offer next;next.ssid=String(input["ssid"]|"");next.password=String(input["password"]|"");String key=input["key"]|"";next.port=input["port"]|0;String host=input["host"]|"";
+ if(running)return false;Offer next;next.ssidProof=input["ssidProof"]|false;next.ssid=String(input["ssid"]|"");next.password=String(input["password"]|"");String key=input["key"]|"";next.port=input["port"]|0;String host=input["host"]|"";
  if(String(input["phoneSsid"]|"")!=next.ssid)return false;
  if(!next.ssid.length()||next.ssid.length()>32||next.password.length()>63||key.length()!=64||next.port<1024||!next.host.fromString(host)||next.host[0]==0||next.host[0]>=224||next.host[0]==127)return false;
  for(int i=0;i<32;i++){auto hex=[](char c){return c>='0'&&c<='9'?c-'0':c>='a'&&c<='f'?c-'a'+10:-1;};int a=hex(key[2*i]),b=hex(key[2*i+1]);if(a<0||b<0)return false;next.key[i]=(a<<4)|b;}
