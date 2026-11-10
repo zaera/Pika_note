@@ -1,3 +1,6 @@
+#include "src/app/speech_stream.h"
+void pikaRequireCleanRefresh();
+void pikaSetFullRefreshMode(bool full);
 #include <esp_heap_caps.h>
 #include "src/app/phone_lan.h"
 #include "src/app/brand_compat.h"
@@ -189,7 +192,7 @@ void replyUsbSetup(const char* status, const char* detail = nullptr) {
 
 String usbAskTestQuestion;
 bool usbAskRenewRequested=false;
-bool usbFeedbackTestRequested=false;
+bool usbFeedbackTestRequested=false,usbDisplayTestRequested=false,usbDisplayFull=false;
 bool usbReminderTest=false;
 bool usbSleepRequested=false;uint32_t usbKeepAwakeUntil=0;
 bool usbWeatherRequested=false;
@@ -216,6 +219,7 @@ void applyUsbSetupLine(const String& line) {
   if(line=="PHONE_TLS_TEST"){usbPhoneTlsRequested=true;return;}
   if(line=="PIKA_STATUS"){usbStatusRequested=true;return;}
   if(line=="ASK_RENEW"){usbAskRenewRequested=true;Serial.println("PIKA_ASK_RENEW_QUEUED");return;}
+  if(line=="DISPLAY_TEST"||line=="DISPLAY_TEST_FULL"){usbDisplayFull=line=="DISPLAY_TEST_FULL";usbDisplayTestRequested=true;return;}
   if(line=="ASK_FEEDBACK_TEST"){usbFeedbackTestRequested=true;Serial.println("PIKA_FEEDBACK_TEST_QUEUED");return;}
   if(line.startsWith("ASK_EXECUTE ")){usbAskTestQuestion="EXECUTE: "+line.substring(12);Serial.println("PIKA_ASK_EXECUTE_QUEUED");return;}
   if(line=="ASK_TEST"||line.startsWith("ASK_TEST ")){usbAskTestQuestion=line.length()>9?line.substring(9):String("Создай задачи из моей единственной заметки");Serial.println("PIKA_ASK_TEST_QUEUED");return;}
@@ -574,7 +578,7 @@ void askBrain(int holdPin=BTN_PWR) {
   }
 
   const String offlineCapturedUtc=currentUtcIso();
-  auto queueAsk=[&](){stopWifi();if(pikaQueueOfflineAsk(kQuestionPath,offlineCapturedUtc)){showMemoryProcessing(0,"QUEUED");delay(250);}else{showError("SAVE FAILED");pikaPlayNotify(2);delay(800);}returnToReady();};
+  auto queueAsk=[&](){stopWifi();if(pikaQueueOfflineAsk(kQuestionPath,offlineCapturedUtc)){showMemoryProcessing(0,"QUEUED");delay(250);pikaRequireCleanRefresh();}else{showError("SAVE FAILED");pikaPlayNotify(2);delay(800);}returnToReady();};
   if(pikaOfflineAskPending()){queueAsk();return;}
   if(!pikaPhoneOnline()&&!pikaPhoneWait(1500)){queueAsk();return;}
   showAskProgress("CONNECTING", nullptr);
@@ -589,13 +593,17 @@ void askBrain(int holdPin=BTN_PWR) {
   String answer;
   std::vector<int> sources;
   showAskProgress("DECODING", "YOUR QUESTION");
+  const uint32_t decodeAt=millis();
   const bool questionReady = transcribeQuestion(kQuestionPath, question);
+  Serial.printf("PIKA_ASK_TIMING stage=transcribe ms=%lu ok=%d\n",(unsigned long)(millis()-decodeAt),questionReady);
   if (!questionReady) {queueAsk();return;}
   struct MutationScope{MutationScope(bool allowed){pikaSetVoiceMutationContext(allowed);}~MutationScope(){pikaSetVoiceMutationContext(false);}} mutationScope(voiceMutationGestureAllowed(holdPin,BTN_PWR));
   if(pikaMailConfigured()&&pikaMailQuestion(question)){showAskProgress("UPDATING","MAIL");pikaMailRequestRefresh();pikaRunAskStage([](void*){pikaMailRefresh();},nullptr);}
   const uint32_t askBeforeRevision=managerRevision();
   showAskThinking();
+  const uint32_t planAt=millis();
   bool answered = pikaUnifiedAsk(question,answer,sources);
+  Serial.printf("PIKA_ASK_TIMING stage=assistant ms=%lu ok=%d\n",(unsigned long)(millis()-planAt),answered);
   if (answered) {answered = matchAnswerLanguage(question, answer);}
   if (!answered) {
     if(managerRevision()==askBeforeRevision){queueAsk();return;}
@@ -620,8 +628,10 @@ void askBrain(int holdPin=BTN_PWR) {
     const bool ru=pikaMostlyCyrillic(question.c_str());
     answer+=ru?(ran&&synced?"\nКалендарь Google синхронизирован.":"\nОтправка в Google Calendar ожидает синхронизации; локальные записи сохранены."):(ran&&synced?"\nGoogle Calendar synced.":"\nGoogle Calendar sync is pending; local records are saved.");
   }
+  const uint32_t saveAskAt=millis();
   pikaRememberAskTurn(question,answer);
   if(managerRevision()!=askBeforeRevision){const bool pushed=pikaPhonePublishLiveSnapshot();Serial.printf("PIKA_EARLY_RECORDS_PUSH queued=%d\n",pushed);}
+  Serial.printf("PIKA_ASK_TIMING stage=save_and_publish ms=%lu\n",(unsigned long)(millis()-saveAskAt));
   showAskProgress("BUILDING", "VOICE");
   pikaPlayNotify(1);
   const bool speechReady = playBrainSpeech(answer, kAnswerPath, static_cast<int>(sources.size()),true,nullptr,true);
@@ -1074,6 +1084,7 @@ void setup() {
   }
 
   heap_caps_malloc_extmem_enable(512); // Keep large String/JSON/network buffers out of scarce internal RAM.
+  PikaSpeechStream::reserveWorker(); // Reserve playback stack before radio/SD allocations fragment RAM.
   pikaAskStagesBegin(); // Reserve the 32KB stack before BLE/audio fragment internal RAM.
   Serial.printf("V7_BOOT phase=ble reset=%d heap=%u\n",int(esp_reset_reason()),ESP.getFreeHeap());
   if(!pikaFactoryPending())pikaPhoneBegin(); // Never advertise until a pending factory erase finishes.
@@ -1139,7 +1150,7 @@ void loop() {
   pikaRtcServicePhoneTime();
   if(pikaOwnerRestartAt){if(int32_t(millis()-pikaOwnerRestartAt)>=0)ESP.restart();pikaPhoneService();delay(2);return;}
   if(!pikaOwnerBound()){pikaHomeButtonsEnable(false);pikaPhoneService();handleUsbSetup();delay(5);return;}
-  if(pikaUsbBackupDue()){pikaPhoneForeground(true);stopTransferMode();stopWifi();audio_idle_suspend();pikaUsbBackupRun();return;}
+  if(pikaUsbBackupDue()){pikaPhoneForeground(true);if(!pikaLanStopAndWait(1500)){pikaPhoneService();delay(2);return;}pikaPhoneHashCancel();stopTransferMode();stopWifi();audio_idle_suspend();pikaUsbBackupRun();return;}
   if(pikaUsbBackupPending()){pikaPhoneService();handleUsbSetup();delay(1);return;}
   static uint32_t nextBootTrace=0;if(millis()<25000&&millis()>=nextBootTrace){nextBootTrace=millis()+500;pikaHomeButtonsPrintTrace();}
   // A reader screen's Back is handled before any SD scan, RPC or hash work.
@@ -1184,6 +1195,7 @@ void loop() {
     stopWifi();returnToReady();return;
   }
   if(usbAskRenewRequested){usbAskRenewRequested=false;if(state==STATE_RECORDING||state==STATE_ASKING){Serial.println("PIKA_ASK_RENEW_BUSY");return;}Serial.println(pikaAskRenew()?"PIKA_ASK_RENEW_DONE":"PIKA_ASK_RENEW_FAILED");resetActivity();}
+  if(usbDisplayTestRequested){usbDisplayTestRequested=false;if(state==STATE_RECORDING)return;pikaHomeButtonsEnable(false);pikaPhoneForeground(true);state=STATE_ASKING;pikaSetFullRefreshMode(usbDisplayFull);showAskListening();delay(2000);showAskSpeakingPage("Display test. Two times two is four.",0,0);delay(2000);returnToReady();Serial.println("PIKA_DISPLAY_TEST_DONE");}
   if(usbFeedbackTestRequested){
     usbFeedbackTestRequested=false;
     if(state==STATE_RECORDING||state==STATE_ASKING||!bothButtonsUp())return;

@@ -10,6 +10,7 @@
 // Only the audio task touches I2S. Only the calling task touches TLS/UI.
 class PikaSpeechStream {
  public:
+  static bool reserveWorker();
   bool begin(bool cancelOnLower = false);
   bool put(char byte);
   bool poll();
@@ -20,6 +21,7 @@ class PikaSpeechStream {
   bool wasCancelled() const { return cancelled.load(); }
  private:
   static void worker(void* context);
+  static void dispatcher(void* context);
   uint8_t* buffer = nullptr;
   uint32_t capacity = kPcmStreamCapacity;
   std::atomic<uint32_t> written{0}, read{0};

@@ -29,6 +29,8 @@ void clearWhite();
 bool pikaHomeRefreshBusy();
 void pikaWaitHomeRefresh();
 void refreshHomeAsync();
+void pikaRequireCleanRefresh();
+void pikaSetFullRefreshMode(bool full);
 void refresh();
 void refreshFast();
 void refreshClean();

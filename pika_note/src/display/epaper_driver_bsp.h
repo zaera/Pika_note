@@ -29,6 +29,8 @@ private:
     const int Height;
     spi_device_handle_t spi;
     uint8_t *buffer = NULL;
+    uint8_t *previousBuffer = NULL;
+    bool previousValid = false;
     bool busyTimedOut = false;
 
     void spi_gpio_init();

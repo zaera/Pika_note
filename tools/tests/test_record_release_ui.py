@@ -7,7 +7,9 @@ stub=r'''#include <atomic>
 #include <cstdint>
 #include <cassert>
 #include <cstdio>
-using Fn=void(*)(void*);Fn pending=nullptr;bool fail=false,releaseDuringPaint=false;int listening=0,stopped=0;bool stoppedQuestion=false;
+using Fn=void(*)(void*);Fn pending=nullptr;bool fail=false,releaseDuringPaint=false;int listening=0,stopped=0;bool stoppedQuestion=false;int vibrations=0,beeps=0;bool held=true;
+constexpr int BTN_PWR=18,LOW=0;int digitalRead(int){return held?LOW:1;}
+void pikaVibrate(int){assert(listening>0);++vibrations;}void pikaPlayNotify(int){++beeps;}
 constexpr int pdPASS=1;using BaseType_t=int;
 struct Log{void println(const char*){} template<class... A>void printf(const char*,A...){}}Serial;
 bool homePainting=false;int homeWaits=0;uint32_t millis(){return 100;}
@@ -17,12 +19,12 @@ void showRecordingStopped(bool q){++stopped;stoppedQuestion=q;}
 void vTaskDelete(void*){}int xTaskCreatePinnedToCore(Fn fn,const char*,int,void*,int,void*,int){if(fail)return 0;pending=fn;return pdPASS;}
 void delay(int){assert(pending);Fn f=pending;pending=nullptr;f(nullptr);}
 '''
-main=r'''void showRecording(){assert(!homePainting);++listening;if(releaseDuringPaint)recordingEnded=true;}
+main=r'''void showRecording(){assert(!homePainting);++listening;if(releaseDuringPaint){recordingEnded=true;recordingReleased=true;}}
 void showAskListening(){showRecording();}
 int main(){
  homePainting=true;startRecordingUi();assert(recordingUiBusy&&listening==0&&homeWaits==0&&homePainting);releaseDuringPaint=true;waitForRecordingUi();assert(homeWaits==1&&listening==1&&stopped==1&&recordingEndedDrawn&&!stoppedQuestion);
- recordingEnded=false;recordingEndedDrawn=false;releaseDuringPaint=false;startRecordingUi(false,0,0,true);waitForRecordingUi();assert(listening==2&&stopped==1);
- recordingEnded=true;startRecordingUi(false,0,0,true);waitForRecordingUi();assert(listening==2&&stopped==2&&stoppedQuestion);
+ assert(vibrations==0&&beeps==0);recordingReleased=false;recordingEnded=false;recordingEndedDrawn=false;releaseDuringPaint=false;startRecordingUi(false,0,0,true);waitForRecordingUi();assert(listening==2&&stopped==1&&vibrations==1&&beeps==1);
+ recordingEnded=true;startRecordingUi(false,0,0,true);waitForRecordingUi();assert(listening==2&&stopped==2&&stoppedQuestion&&vibrations==1);
  fail=true;assert(!startRecordingUi());assert(!recordingUiBusy);
  puts("Release during panel update and after panel update: PASS");}
 '''

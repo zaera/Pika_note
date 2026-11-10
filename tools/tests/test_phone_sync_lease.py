@@ -16,3 +16,10 @@ with tempfile.TemporaryDirectory() as d:
  p=Path(d);(p/'test.cpp').write_text(source);exe=p/'lease.exe'
  subprocess.run((sys.argv[1:] or ['c++'])+[str(p/'test.cpp'),'-std=c++17','-o',str(exe)],check=True);subprocess.run([str(exe)],check=True)
 print('Sleep lease: long active transfer, stalled transfer, disconnect, release and millis wrap: PASS')
+
+# Every protocol path that releases a lease must acquire it before its try/finally.
+store=(root/'android-companion/app/src/main/java/me/pikanote/companion/Store.java').read_text()
+fast=store[store.index(' void synchronizeFast('):store.index(' JSONObject readDelta(')]
+assert fast.index('put("active",true)')<fast.index('  try{')
+assert 'put("active",false)' in fast
+print('Fast exchange acquires and releases its transfer lease: PASS')

@@ -78,6 +78,7 @@ epaper_driver_display::epaper_driver_display(int width, int height, custom_lcd_s
     }
 
     assert(buffer);
+    previousBuffer=(uint8_t*)heap_caps_malloc(alloc_len,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
     memset(buffer, 0xFF, alloc_len);
 }
 
@@ -124,7 +125,7 @@ void epaper_driver_display::spi_port_init()
 
     spi_device_interface_config_t devcfg = {};
     devcfg.spics_io_num = -1;
-    devcfg.clock_speed_hz = 40 * 1000 * 1000;
+    devcfg.clock_speed_hz = 10 * 1000 * 1000;
     devcfg.mode = 0;
     devcfg.queue_size = 7;
 
@@ -179,6 +180,9 @@ void epaper_driver_display::EPD_SendCommand(uint8_t command)
     set_cs_0();
     SPI_SendByte(command);
     set_cs_1();
+    // BUSY asserts after activation, not necessarily by the next CPU read.
+    // Never overwrite the previous-image plane while the update is starting.
+    if(command==0x20)vTaskDelay(pdMS_TO_TICKS(50));
 }
 
 void epaper_driver_display::writeBytes(uint8_t *buffer, int len)
@@ -339,6 +343,7 @@ void epaper_driver_display::EPD_Display()
     assert(buffer);
     writeBytes(buffer, buffer_len);
     EPD_TurnOnDisplay();
+    if(previousBuffer&&!busyTimedOut){memcpy(previousBuffer,buffer,buffer_len);previousValid=true;}
 }
 
 void epaper_driver_display::EPD_DisplayPartBaseImage()
@@ -352,6 +357,7 @@ void epaper_driver_display::EPD_DisplayPartBaseImage()
     writeBytes(buffer, buffer_len);
 
     EPD_TurnOnDisplay();
+    if(previousBuffer&&!busyTimedOut){memcpy(previousBuffer,buffer,buffer_len);previousValid=true;}
 }
 
 void epaper_driver_display::EPD_Init_Partial()
@@ -390,17 +396,17 @@ void epaper_driver_display::EPD_Init_Partial()
 
 void epaper_driver_display::EPD_DisplayPart()
 {
-    int buffer_len = lcd_spi_data.buffer_len;
-    EPD_SendCommand(0x24);
-    assert(buffer);
-    writeBytes(buffer, buffer_len);
+    if(!previousBuffer||!previousValid){EPD_DisplaySleepFrame();EPD_Init_Partial();return;}
+    const int buffer_len=lcd_spi_data.buffer_len;
+    // Restore the actual last confirmed frame explicitly: resets and waveform
+    // switches must not leave a stale differential base inside the controller.
+    EPD_SetWindows(0,Width-1,Height-1,0);
+    EPD_SetCursor(0,Height-1);
+    EPD_SendCommand(0x26);writeBytes(previousBuffer,buffer_len);
+    EPD_SetCursor(0,Height-1);
+    EPD_SendCommand(0x24);writeBytes(buffer,buffer_len);
     EPD_TurnOnDisplayPart();
-
-    // Keep the controller's previous-image plane in sync. Without this, every
-    // later partial update is compared against the boot-time white image and
-    // old screens remain visible underneath the new one.
-    EPD_SendCommand(0x26);
-    writeBytes(buffer, buffer_len);
+    if(!busyTimedOut){memcpy(previousBuffer,buffer,buffer_len);previousValid=true;}else previousValid=false;
 }
 
 void epaper_driver_display::EPD_DrawColorPixel(uint16_t x, uint16_t y, uint8_t color)

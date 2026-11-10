@@ -153,6 +153,7 @@ void homeRefreshWorker(void*) { const uint32_t at=millis();refresh();Serial.prin
 }
 bool pikaHomeRefreshBusy(){return homeRefreshBusy.load(std::memory_order_acquire);}
 void pikaWaitHomeRefresh(){while(pikaHomeRefreshBusy())delay(1);}
+void pikaRequireCleanRefresh(){pikaWaitHomeRefresh();epaperBaseReady=false;}
 void refreshHomeAsync(){
  pikaWaitHomeRefresh();homeRefreshBusy.store(true,std::memory_order_release);
  if(xTaskCreatePinnedToCore(homeRefreshWorker,"home-display",4096,nullptr,1,nullptr,0)!=pdPASS){homeRefreshBusy=false;refresh();}
@@ -161,7 +162,10 @@ void clearWhite() { pikaWaitHomeRefresh();display->EPD_Clear(); }
 // The first frame after power-up establishes both controller image planes.
 // Afterwards use the much faster partial waveform and periodically clean the
 // panel to prevent accumulated ghosting.
+namespace {bool panelFullMode=false;}
+void pikaSetFullRefreshMode(bool full){pikaWaitHomeRefresh();if(panelFullMode!=full){panelFullMode=full;epaperBaseReady=false;}}
 void refresh() {
+  if(panelFullMode){refreshClean();return;}
   if (!epaperBaseReady || epaperPartialRefreshes >= kPartialRefreshesBeforeClean) {
     refreshClean();
     return;
@@ -174,6 +178,7 @@ void refresh() {
 // Use only when the layout and background stay identical (for example the
 // Moment counter while a recording screen is already visible).
 void refreshFast() {
+  if(panelFullMode){refreshClean();return;}
   if (!epaperBaseReady) {
     refreshClean();
     return;
@@ -195,6 +200,7 @@ bool refreshSleep() {
 }
 
 void refreshClean() {
+  if(panelFullMode){const bool ok=display->EPD_DisplaySleepFrame();epaperBaseReady=false;epaperPartialRefreshes=0;Serial.printf("PIKA_PANEL_FULL confirmed=%d\n",ok);return;}
   display->EPD_Init();
   display->EPD_DisplayPartBaseImage();
   display->EPD_Init_Partial();

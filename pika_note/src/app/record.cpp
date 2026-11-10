@@ -22,7 +22,8 @@ extern "C" {
 }
 
 namespace {
-std::atomic<bool> recordingUiBusy{false},recordingEnded{false},recordingEndedDrawn{false};
+std::atomic<bool> recordingUiBusy{false},recordingEnded{false},recordingEndedDrawn{false},recordingReleased{false};
+int recordingUiHoldPin=BTN_PWR;
 bool shortCapture=false;
 bool recordingUiProgress = false;
 bool recordingUiQuestion = false;
@@ -36,10 +37,14 @@ void recordingUiTask(void*) {
   // the microphone loop, before touching its shared framebuffer or SPI bus.
   pikaWaitHomeRefresh();
   Serial.printf("[RecUI] begin question=%d ended=%d at=%lu\n",recordingUiQuestion,recordingEnded.load(),(unsigned long)millis());
+  bool paintedListening=false;
   if (recordingEnded) { showRecordingStopped(recordingUiQuestion); recordingEndedDrawn=true; }
   else if (recordingUiProgress) showRecordingProgress(recordingUiMarkerMs, recordingUiMarkerCount);
-  else if (recordingUiQuestion) showAskListening();
-  else showRecording();
+  else if (recordingUiQuestion) {showAskListening();paintedListening=true;}
+  else {showRecording();paintedListening=true;}
+  // Signal readiness only after the black frame is physically submitted. The
+  // capture loop has already been draining I2S while the panel was updating.
+  if(paintedListening&&!recordingReleased.load()&&digitalRead(recordingUiHoldPin)==LOW){pikaVibrate(recordingUiQuestion?3:4);pikaPlayNotify(0);}
   // Release may arrive while the panel is still painting Listening.
   if(recordingEnded&&!recordingEndedDrawn){showRecordingStopped(recordingUiQuestion);recordingEndedDrawn=true;}
   Serial.printf("[RecUI] painted stopped=%d at=%lu\n",recordingEndedDrawn.load(),(unsigned long)millis());
@@ -121,8 +126,7 @@ static bool recordHeldToPath(const char* path, int holdPin, bool captureMoments,
     f.close(); return false;
   }
 
-  pikaVibrate(captureMoments?4:3);
-  pikaPlayNotify(0);
+  recordingUiHoldPin=holdPin;recordingReleased=false;
   recordingEnded=false;recordingEndedDrawn=false;
   if (!startRecordingUi(false, 0, 0, !captureMoments)) {
     heap_caps_free(sbuf); heap_caps_free(mbuf);
@@ -189,6 +193,7 @@ static bool recordHeldToPath(const char* path, int holdPin, bool captureMoments,
   Serial.printf("[Rec] hold ended after %lu ms\n",(unsigned long)(millis()-t0));
   shortCapture=totalMono < SAMPLE_RATE; // mono PCM16: 0.5 seconds = sampleRate bytes
   recordingEnded=!shortCapture;
+  recordingReleased=true;
   // Queue visual acknowledgement before microphone shutdown and SD finalization.
   // An in-flight Listening refresh consumes this flag before it finishes.
   if(!shortCapture&&!recordingUiBusy)startRecordingUi(false,0,0,!captureMoments);

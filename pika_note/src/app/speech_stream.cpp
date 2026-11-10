@@ -16,6 +16,22 @@ extern "C" {
 }
 #endif
 
+#ifndef PIKA_SPEECH_STREAM_HOST_TEST
+#include <freertos/queue.h>
+namespace {QueueHandle_t speechJobs=nullptr;std::atomic<bool> speechSlotBusy{false};}
+#endif
+bool PikaSpeechStream::reserveWorker(){
+#ifndef PIKA_SPEECH_STREAM_HOST_TEST
+ if(speechJobs)return true;speechJobs=xQueueCreate(1,sizeof(PikaSpeechStream*));if(!speechJobs)return false;
+ if(xTaskCreatePinnedToCore(dispatcher,"speech-audio",6144,nullptr,1,nullptr,1)!=pdPASS){vQueueDelete(speechJobs);speechJobs=nullptr;return false;}
+#endif
+ return true;
+}
+void PikaSpeechStream::dispatcher(void*){
+#ifndef PIKA_SPEECH_STREAM_HOST_TEST
+ for(;;){PikaSpeechStream* stream=nullptr;if(xQueueReceive(speechJobs,&stream,portMAX_DELAY)==pdTRUE&&stream)worker(stream);}
+#endif
+}
 bool PikaSpeechStream::begin(bool cancelOnLower) {
   cancelLower = cancelOnLower;
   // Keep the network's internal heap available for TLS.
@@ -26,7 +42,14 @@ bool PikaSpeechStream::begin(bool cancelOnLower) {
   }
   if (!buffer) return false;
   cancelArmed = digitalRead(BTN_REC) == HIGH;
+#ifdef PIKA_SPEECH_STREAM_HOST_TEST
   if (xTaskCreatePinnedToCore(worker, "speech-audio", 6144, this, 1, nullptr, 1) != pdPASS) {
+#else
+  PikaSpeechStream* job=this;
+  bool accepted=false;
+  if(reserveWorker()&&!speechSlotBusy.exchange(true)){accepted=xQueueSend(speechJobs,&job,0)==pdTRUE;if(!accepted)speechSlotBusy=false;}
+  if (!accepted) {
+#endif
     heap_caps_free(buffer); buffer = nullptr; return false;
   }
   return true;
@@ -125,6 +148,11 @@ void PikaSpeechStream::worker(void* context) {
   if(stream.cancelled.load()&&outputBytes==0)pikaError("audio","cancel-before-playback","Playback cancelled by a button before any audio was output");
   Serial.printf("[Audio] stream output=%lu bytes rebuffer=%lu cancelled=%d failed=%d\n",
     (unsigned long)outputBytes, (unsigned long)underruns, stream.cancelled.load(), stream.failed.load());
+#ifndef PIKA_SPEECH_STREAM_HOST_TEST
+  speechSlotBusy=false;
+#endif
   stream.done.store(true, std::memory_order_release);
+#ifdef PIKA_SPEECH_STREAM_HOST_TEST
   vTaskDelete(nullptr);
+#endif
 }
