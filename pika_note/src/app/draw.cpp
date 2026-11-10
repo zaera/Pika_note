@@ -199,6 +199,18 @@ bool refreshSleep() {
   return confirmed;
 }
 
+// Recording readiness is a visible state transition, never an unconfirmed
+// differential frame. Only signal the user after a completed clean update.
+bool refreshRecordingStart(){
+  pikaWaitHomeRefresh();
+  const uint32_t at=millis();bool confirmed=false;
+  for(int attempt=0;attempt<2&&!confirmed;++attempt)confirmed=display->EPD_DisplaySleepFrame();
+  if(confirmed){display->EPD_Init_Partial();confirmed=!display->hasBusyTimeout();}
+  epaperBaseReady=confirmed;epaperPartialRefreshes=0;
+  Serial.printf("PIKA_LISTENING_FRAME confirmed=%d ms=%lu\n",confirmed,(unsigned long)(millis()-at));
+  return confirmed;
+}
+
 void refreshClean() {
   if(panelFullMode){const bool ok=display->EPD_DisplaySleepFrame();epaperBaseReady=false;epaperPartialRefreshes=0;Serial.printf("PIKA_PANEL_FULL confirmed=%d\n",ok);return;}
   display->EPD_Init();

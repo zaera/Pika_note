@@ -32,6 +32,8 @@ private:
     uint8_t *previousBuffer = NULL;
     bool previousValid = false;
     bool busyTimedOut = false;
+    bool activationSeen = false;
+    bool frameActivationRequired = false;
 
     void spi_gpio_init();
     void spi_port_init();

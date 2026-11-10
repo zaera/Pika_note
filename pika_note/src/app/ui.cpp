@@ -500,13 +500,13 @@ void showTodayAgenda(bool events, int page) {
   refresh();
 }
 
-void showRecording() {
+bool showRecording() {
   fillRect(0, 0, W, H, BLACK);
   drawHeader(uiText("NOTIZ", "NOTE"), WHITE);
   drawStatusHero(uiText("HOERE ZU", "LISTENING"), 67, WHITE);
   fillCircle(kRight - 7, 146, 7, WHITE);
   labelLeft(139, uiText("AUFNAHME", "RECORDING"), 1, WHITE);
-  refresh();
+  return refreshRecordingStart();
 }
 
 void showRecordingStopped(bool question) {
@@ -565,24 +565,27 @@ void showBacklogProcessing(int completed, int total, const char* phase) {
   refresh();
 }
 
-void showAskListening() {
+bool showAskListening() {
   fillRect(0, 0, W, H, BLACK);
   drawHeader(uiText("FRAGE", "ASK"), WHITE);
   drawStatusHero(uiText("HOERE ZU", "LISTENING"), 67, WHITE);
   fillCircle(kRight - 7, 146, 7, WHITE);
   labelLeft(139, uiText("AUFNAHME", "RECORDING"), 1, WHITE);
-  refresh();
+  return refreshRecordingStart();
 }
 
 void showAskThinking() { showAskProgress("THINKING", "WITH MEMORY"); }
 
 void showAskProgress(const char* action, const char* object) {
+  const uint32_t started=millis();
   clearWhite();
   drawHeader(nullptr, BLACK);
   drawStatusHero(askPhaseCopy(action), 78, BLACK);
   const int stage = askStage(action);
   if (!action || strcmp(action,"UPDATING")) drawProgressSegments(stage, 3, 151, BLACK);
-  refresh();
+  // Transitional white status pages do not need a periodic full cleaning.
+  refreshFast();
+  Serial.printf("PIKA_ASK_PANEL phase=%s ms=%lu\n",action?action:"",(unsigned long)(millis()-started));
 }
 
 void showWakeUpdate(int completed,int total,const char* phase){

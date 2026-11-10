@@ -34,6 +34,7 @@ void pikaSetFullRefreshMode(bool full);
 void refresh();
 void refreshFast();
 void refreshClean();
+bool refreshRecordingStart();
 bool refreshSleep();
 
 void drawBigDigit(int x, int y, int w, int h, char d, uint8_t c);

@@ -182,7 +182,17 @@ void epaper_driver_display::EPD_SendCommand(uint8_t command)
     set_cs_1();
     // BUSY asserts after activation, not necessarily by the next CPU read.
     // Never overwrite the previous-image plane while the update is starting.
-    if(command==0x20)vTaskDelay(pdMS_TO_TICKS(50));
+    if(command==0x20){
+        if(!frameActivationRequired){vTaskDelay(pdMS_TO_TICKS(50));return;}
+        activationSeen=false;
+        const TickType_t at=xTaskGetTickCount();
+        while(xTaskGetTickCount()-at<pdMS_TO_TICKS(250)){
+            if(gpio_get_level((gpio_num_t)lcd_spi_data.busy)==1){activationSeen=true;break;}
+            vTaskDelay(pdMS_TO_TICKS(1));
+        }
+        // Preserve the guard for commands issued before read_busy().
+        if(activationSeen)vTaskDelay(pdMS_TO_TICKS(10));
+    }
 }
 
 void epaper_driver_display::writeBytes(uint8_t *buffer, int len)
@@ -265,7 +275,8 @@ void epaper_driver_display::EPD_TurnOnDisplay()
 {
     EPD_SendCommand(0x22);
     EPD_SendData(0xc7);
-    EPD_SendCommand(0x20);
+    frameActivationRequired=true;EPD_SendCommand(0x20);frameActivationRequired=false;
+    if(!activationSeen){busyTimedOut=true;previousValid=false;pikaError("display","activation_missing","E-paper did not start the frame update",-2,250);return;}
     read_busy();
 }
 
@@ -273,7 +284,8 @@ void epaper_driver_display::EPD_TurnOnDisplayPart()
 {
     EPD_SendCommand(0x22);
     EPD_SendData(0xcf);
-    EPD_SendCommand(0x20);
+    frameActivationRequired=true;EPD_SendCommand(0x20);frameActivationRequired=false;
+    if(!activationSeen){busyTimedOut=true;previousValid=false;pikaError("display","activation_missing","E-paper did not start the frame update",-2,250);return;}
     read_busy();
 }
 

@@ -40,11 +40,11 @@ void recordingUiTask(void*) {
   bool paintedListening=false;
   if (recordingEnded) { showRecordingStopped(recordingUiQuestion); recordingEndedDrawn=true; }
   else if (recordingUiProgress) showRecordingProgress(recordingUiMarkerMs, recordingUiMarkerCount);
-  else if (recordingUiQuestion) {showAskListening();paintedListening=true;}
-  else {showRecording();paintedListening=true;}
-  // Signal readiness only after the black frame is physically submitted. The
+  else if (recordingUiQuestion) {paintedListening=showAskListening();}
+  else {paintedListening=showRecording();}
+  // Signal readiness only after the black frame is confirmed complete. The
   // capture loop has already been draining I2S while the panel was updating.
-  if(paintedListening&&!recordingReleased.load()&&digitalRead(recordingUiHoldPin)==LOW){pikaVibrate(recordingUiQuestion?3:4);pikaPlayNotify(0);}
+  if(paintedListening&&!recordingReleased.load()&&digitalRead(recordingUiHoldPin)==LOW){Serial.printf("PIKA_RECORD_READY question=%d at=%lu\n",recordingUiQuestion,(unsigned long)millis());pikaVibrate(recordingUiQuestion?3:4);pikaPlayNotify(0);}
   // Release may arrive while the panel is still painting Listening.
   if(recordingEnded&&!recordingEndedDrawn){showRecordingStopped(recordingUiQuestion);recordingEndedDrawn=true;}
   Serial.printf("[RecUI] painted stopped=%d at=%lu\n",recordingEndedDrawn.load(),(unsigned long)millis());
